@@ -13,6 +13,8 @@ aliases:
   - 日志文件过大
   - YeYing 越用越大
   - 清理空间
+  - Warehouse S3 文件存储
+  - FILE_STORAGE_DISK
 related_tools: []
 related_pages: []
 prerequisites:
@@ -39,6 +41,14 @@ last_verified: v0.0.1
 | `docker/mysql/backup/` | 数据库自动备份 | 可以，保留近几份 |
 | `storage/logs/`、`docker/log/` | Laravel/nginx/php 日志 | 可以，按日轮转 |
 | `public/uploads/tmp/` | 上传临时文件 | 可以，定时清理 |
+
+## Warehouse S3 文件存储
+FileCenter 附件可设置 `FILE_STORAGE_DISK=s3` 写入 Warehouse S3 兼容服务。`S3_BUCKET=services`、`S3_PREFIX=project` 对应 Warehouse 凭证范围 `/services/project`；`S3_PATH_STYLE=true` 必须保留。
+
+- `FILESYSTEM_DRIVER` 保持 `local`，不要全局切换为 `s3`。
+- V1 只覆盖文件中心附件；聊天附件、头像、文档内嵌图片和临时上传仍使用本地目录。
+- 文件中心附件本地副本是预览、OnlyOffice、压缩下载的兼容缓存；本地缓存缺失时会从 S3 恢复。
+- 不要直接删除 `public/uploads/file/`，也不要直接删除 `services/project` 中的对象。
 
 ## 解决
 

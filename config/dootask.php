@@ -32,6 +32,10 @@ return [
     // 临时文件自动清理天数（DeleteTmpTask）
     'auto_empty_temp_file' => env('AUTO_EMPTY_TEMP_FILE', 30),
 
+    // FileCenter attachment storage. Set to s3 only after S3_* is configured.
+    // Local files remain a compatibility cache for previews and file processing.
+    'file_storage_disk' => env('FILE_STORAGE_DISK', 'local'),
+
     // 在线授权：YeYing AppStore 授权中心地址（OnlineLicense；测试可指向开发环境）
     'online_license_appstore_url' => env('ONLINE_LICENSE_APPSTORE_URL', 'https://appstore.yeying.pub'),
 

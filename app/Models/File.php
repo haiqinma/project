@@ -5,6 +5,7 @@ namespace App\Models;
 use Request;
 use App\Module\Apps;
 use App\Module\Base;
+use App\Services\FileStorage;
 use App\Tasks\PushTask;
 use App\Tasks\ManticoreSyncTask;
 use App\Observers\AbstractObserver;
@@ -441,6 +442,7 @@ class File extends AbstractModel
                 'type' => $type,
                 'ext' => $data['ext'],
                 'url' => $data['path'],
+                'storage' => FileStorage::store($data['path']),
             ];
             if (isset($data['width'])) {
                 $content['width'] = $data['width'];
@@ -850,6 +852,7 @@ class File extends AbstractModel
         if (in_array($item['ext'], self::imageExt) ) {
             $content = Base::json2array(FileContent::whereFid($item['id'])->orderByDesc('id')->value('content'));
             if ($content) {
+                FileStorage::ensureLocal($content);
                 $item['image_url'] = Base::fillUrl($content['url']);
                 $item['image_width'] = intval($content['width']);
                 $item['image_height'] = intval($content['height']);
@@ -1062,6 +1065,9 @@ class File extends AbstractModel
         if ($file->type != 'folder' && $file->name != '') {
             $content = FileContent::whereFid($file->id)->orderByDesc('id')->first();
             $content = Base::json2array($content?->content ?: []);
+            if (!empty($content['url'])) {
+                FileStorage::ensureLocal($content);
+            }
             $typeExtensions = [
                 'word' => 'docx',
                 'excel' => 'xlsx',
