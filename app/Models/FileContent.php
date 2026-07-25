@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Module\Base;
 use App\Module\Timer;
+use App\Services\FileStorage;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -52,9 +53,17 @@ class FileContent extends AbstractModel
      */
     public function forceDeleteContent()
     {
+        $shared = self::withTrashed()
+            ->where('id', '!=', $this->id)
+            ->where('content', $this->getRawOriginal('content'))
+            ->exists();
         $this->forceDelete();
+        if ($shared) {
+            return;
+        }
         $content = Base::json2array($this->content ?: []);
         if (str_starts_with($content['url'], 'uploads/')) {
+            FileStorage::delete($content);
             $path = public_path($content['url']);
             if (file_exists($path)) {
                 @unlink($path);
@@ -117,7 +126,7 @@ class FileContent extends AbstractModel
             if (empty($content)) {
                 $filePath = public_path('assets/office/empty.' . str_replace(['word', 'excel', 'ppt'], ['docx', 'xlsx', 'pptx'], $file->type));
             } else {
-                $filePath = public_path($content['url']);
+                $filePath = FileStorage::ensureLocal($content);
             }
             return Base::DownloadFileResponse($filePath, $name);
         }
@@ -132,6 +141,7 @@ class FileContent extends AbstractModel
             abort_if($download, 403, "This file is empty.");
         } else {
             $path = $content['url'];
+            FileStorage::ensureLocal($content);
             if ($file->ext) {
                 $res = File::formatFileData([
                     'path' => $path,

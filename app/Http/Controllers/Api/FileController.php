@@ -13,6 +13,7 @@ use App\Models\FileUser;
 use App\Models\User;
 use App\Models\UserRecentItem;
 use App\Module\Base;
+use App\Services\FileStorage;
 use App\Module\Down;
 use App\Module\Lock;
 use App\Module\Timer;
@@ -698,12 +699,14 @@ class FileController extends AbstractController
         $save = public_path($path);
         Base::makeDir(dirname($save));
         file_put_contents($save, $contentString);
+        $storage = FileStorage::store($path);
         //
         $content = FileContent::createInstance([
             'fid' => $file->id,
             'content' => [
                 'type' => $file->ext,
-                'url' => $path
+                'url' => $path,
+                'storage' => $storage,
             ],
             'text' => $text,
             'size' => filesize($save),
@@ -781,11 +784,13 @@ class FileController extends AbstractController
             Base::makeDir(dirname($save));
             $res = Ihttp::download($from, $save);
             if (Base::isSuccess($res)) {
+                $storage = FileStorage::store($path);
                 $content = FileContent::createInstance([
                     'fid' => $file->id,
                     'content' => [
                         'from' => $from,
-                        'url' => $path
+                        'url' => $path,
+                        'storage' => $storage,
                     ],
                     'text' => '',
                     'size' => filesize($save),

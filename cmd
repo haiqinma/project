@@ -543,24 +543,11 @@ env_set() {
     fi
 }
 
-# 初始化env
+# 检查 env。连接地址和部署参数必须由运维显式配置，命令不得自动改写。
 env_init() {
     if [ ! -f ".env" ]; then
-        cp .env.docker .env
-    fi
-    if [ -z "$(env_get DB_ROOT_PASSWORD)" ]; then
-        env_set DB_ROOT_PASSWORD "$(rand_string 16)"
-    fi
-    if [ -z "$(env_get APP_ID)" ]; then
-        env_set APP_ID "$(rand_string 6)"
-    fi
-    if [ -z "$(env_get APP_IPPR)" ]; then
-        env_set APP_IPPR "10.$(rand 50 100).$(rand 100 200)"
-    fi
-    if [ -z "$(env_get UPDATE_TIME)" ]; then
-        env_set DB_HOST "mysql"
-        env_set REDIS_HOST "redis"
-        docker run $TTY_FLAG --rm -v ${WORK_DIR}:/www nginx:alpine sh -c "sed -i 's|/etc/nginx/conf.d/site/|/var/www/docker/nginx/site/|g' /www/docker/nginx/site/*.conf &> /dev/null"
+        error "$(msg '缺少 .env，请复制 .env.template 并完成配置。')"
+        exit 1
     fi
 }
 
