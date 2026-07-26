@@ -163,6 +163,14 @@ If an administrator already exists, the command prints it and leaves passwords u
 
 Back up MySQL, `public/uploads` and production configuration before upgrades. See `docs/` for the deployment, backup and recovery details.
 
+For versioned releases behind a `project` symlink, keep runtime data outside the release directory. Run installation with the same shared directory for every version:
+
+```bash
+YEYING_SHARED_DIR=/opt/deploy/shared/project ./scripts/install.sh
+```
+
+This preserves and links `.env`, `storage/` and `public/uploads/`. S3-backed FileCenter attachments still use `public/uploads/file/` as a compatibility cache, while historical local attachments, avatars and embedded images continue to depend on the shared uploads directory. Do not create each release with an independent `public/uploads/` directory.
+
 ## License
 
 MIT License. Third-party components remain under their respective licenses.

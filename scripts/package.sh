@@ -209,6 +209,7 @@ rsync -a \
   --exclude '.env' \
   "$source_dir/" "$package_dir/"
 
+chmod 755 "$package_dir"
 chmod +x \
   "$package_dir/scripts/ubuntu-deps.sh" \
   "$package_dir/scripts/starter.sh" \

@@ -50,6 +50,15 @@ FileCenter 附件可设置 `FILE_STORAGE_DISK=s3` 写入 Warehouse S3 兼容服�
 - 文件中心附件本地副本是预览、OnlyOffice、压缩下载的兼容缓存；本地缓存缺失时会从 S3 恢复。
 - 不要直接删除 `public/uploads/file/`，也不要直接删除 `services/project` 中的对象。
 
+## 迁移历史文件中心附件
+切换 `FILE_STORAGE_DISK=s3` 只影响之后保存的文件中心内容，旧的 `file_contents` 记录仍从本地读取。管理员应先执行：
+
+```bash
+./cmd artisan file-storage:migrate-s3
+```
+
+该命令默认仅检查，不上传也不改数据库。确认输出后再执行 `./cmd artisan file-storage:migrate-s3 --execute`。每个附件上传后会从 S3 读回并校验大小与 SHA-256，校验成功才标记为 S3；本地缓存不会删除。命令只处理 `uploads/file/` 的文件中心内容，不处理聊天附件、头像、文档内嵌图片或临时上传。缺少本地文件的记录会被列出但不会改写，需先从备份恢复后重试。
+
 ## 解决
 
 **清理 mysql 自动备份（保留 7 天）**

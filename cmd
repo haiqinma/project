@@ -383,6 +383,47 @@ container_run() {
     fi
 }
 
+# PHP application commands run on the host in the current LaravelS deployment.
+# Keep the old container path only as a compatibility fallback.
+artisan_exec() {
+    if command -v php >/dev/null 2>&1; then
+        php artisan "$@"
+    else
+        local cmd="php artisan"
+        local arg
+        for arg in "$@"; do
+            printf -v cmd '%s %q' "$cmd" "$arg"
+        done
+        container_exec php "$cmd"
+    fi
+}
+
+php_exec() {
+    if command -v php >/dev/null 2>&1; then
+        php "$@"
+    else
+        local cmd="php"
+        local arg
+        for arg in "$@"; do
+            printf -v cmd '%s %q' "$cmd" "$arg"
+        done
+        container_exec php "$cmd"
+    fi
+}
+
+composer_exec() {
+    if command -v composer >/dev/null 2>&1; then
+        composer "$@"
+    else
+        local cmd="composer"
+        local arg
+        for arg in "$@"; do
+            printf -v cmd '%s %q' "$cmd" "$arg"
+        done
+        container_exec php "$cmd"
+    fi
+}
+
 # 备份数据库、还原数据库
 mysql_snapshot() {
     if [ "$1" = "backup" ]; then
@@ -1086,14 +1127,14 @@ case "$1" in
         ;;
     "artisan")
         shift 1
-        e="php artisan $@" && container_exec php "$e"
+        artisan_exec "$@"
         ;;
     "php")
         shift 1
         if [[ "$1" == "restart" ]] || [[ "$1" == "reboot" ]]; then
             restart_php
         else
-            e="php $@" && container_exec php "$e"
+            php_exec "$@"
         fi
         ;;
     "nginx")
@@ -1116,7 +1157,7 @@ case "$1" in
         ;;
     "composer")
         shift 1
-        e="composer $@" && container_exec php "$e"
+        composer_exec "$@"
         ;;
     "service")
         shift 1
