@@ -4,7 +4,7 @@ namespace App\Models;
 
 use App\Module\Base;
 use App\Module\Timer;
-use App\Services\FileStorage;
+use App\Services\PersistentStorage;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -63,11 +63,7 @@ class FileContent extends AbstractModel
         }
         $content = Base::json2array($this->content ?: []);
         if (str_starts_with($content['url'], 'uploads/')) {
-            FileStorage::delete($content);
-            $path = public_path($content['url']);
-            if (file_exists($path)) {
-                @unlink($path);
-            }
+            PersistentStorage::delete($content['url']);
         }
     }
 
@@ -125,10 +121,12 @@ class FileContent extends AbstractModel
         if (in_array($file->type, ['word', 'excel', 'ppt'])) {
             if (empty($content)) {
                 $filePath = public_path('assets/office/empty.' . str_replace(['word', 'excel', 'ppt'], ['docx', 'xlsx', 'pptx'], $file->type));
+                $deleteAfterSend = false;
             } else {
-                $filePath = FileStorage::ensureLocal($content);
+                [$filePath] = PersistentStorage::readableLocalPath($content['url']);
+                $deleteAfterSend = PersistentStorage::usesS3();
             }
-            return Base::DownloadFileResponse($filePath, $name);
+            return Base::DownloadFileResponse($filePath, $name)->deleteFileAfterSend($deleteAfterSend);
         }
         if (empty($content)) {
             $content = match ($file->type) {
@@ -141,7 +139,6 @@ class FileContent extends AbstractModel
             abort_if($download, 403, "This file is empty.");
         } else {
             $path = $content['url'];
-            FileStorage::ensureLocal($content);
             if ($file->ext) {
                 $res = File::formatFileData([
                     'path' => $path,
@@ -154,9 +151,8 @@ class FileContent extends AbstractModel
                 $content['preview'] = false;
             }
             if ($download) {
-                $filePath = public_path($path);
-                abort_if(!isset($filePath),403, "This file not support download.");
-                return Base::DownloadFileResponse($filePath, $name);
+                [$filePath] = PersistentStorage::readableLocalPath($path);
+                return Base::DownloadFileResponse($filePath, $name)->deleteFileAfterSend(PersistentStorage::usesS3());
             }
         }
         return Base::retSuccess('success', [ 'content' => $content ]);

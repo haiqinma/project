@@ -5,6 +5,7 @@ namespace App\Module;
 use App\Exceptions\ApiException;
 use App\Models\Setting;
 use App\Models\Tmp;
+use App\Services\PersistentStorage;
 use App\Services\RequestContext;
 use Cache;
 use Carbon\Carbon;
@@ -2047,6 +2048,7 @@ class Base
                     }
                 }
                 $array['thumb'] = Base::fillUrl($array['thumb']);
+                self::persistUploadResult($array);
                 return Base::retSuccess('success', $array);
             }
         }
@@ -2332,6 +2334,7 @@ class Base
                 $array['thumb'] = Base::fillUrl($array['thumb']);
             }
             //
+            self::persistUploadResult($array);
             return Base::retSuccess('success', $array);
         } else {
             return Base::retError($file->getErrorMessage());
@@ -2387,7 +2390,45 @@ class Base
                 }
             }
         }
+        self::persistUploadResult($uploadResult);
         return $uploadResult;
+    }
+
+    private static function persistUploadResult(array $uploadResult): void
+    {
+        $keys = [];
+        if (!empty($uploadResult['path'])) {
+            $keys[$uploadResult['path']] = $uploadResult['file'] ?? public_path($uploadResult['path']);
+        }
+        $thumb = self::relativeUploadPath($uploadResult['thumb'] ?? '');
+        if ($thumb && $thumb !== ($uploadResult['path'] ?? '')) {
+            $keys[$thumb] = public_path($thumb);
+        }
+
+        foreach ($keys as $key => $source) {
+            if (!PersistentStorage::isPersistentKey($key) || !is_file($source)) {
+                continue;
+            }
+            PersistentStorage::putFile($key, $source);
+            if (PersistentStorage::usesS3() && str_starts_with($source, public_path('uploads/')) && is_file($source)) {
+                @unlink($source);
+            }
+        }
+    }
+
+    private static function relativeUploadPath(string $path): string
+    {
+        if ($path === '') {
+            return '';
+        }
+        if (str_starts_with($path, '{{RemoteURL}}')) {
+            return ltrim(substr($path, strlen('{{RemoteURL}}')), '/');
+        }
+        $parsed = parse_url($path);
+        if (isset($parsed['scheme'], $parsed['host'])) {
+            return ltrim($parsed['path'] ?? '', '/');
+        }
+        return ltrim($path, '/');
     }
 
     /**

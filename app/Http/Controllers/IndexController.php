@@ -12,6 +12,7 @@ use App\Module\Doo;
 use App\Module\Base;
 use App\Module\Extranet;
 use App\Module\RandomColor;
+use App\Services\PersistentStorage;
 use App\Tasks\LoopTask;
 use App\Tasks\AppPushTask;
 use App\Tasks\JokeSoupTask;
@@ -291,8 +292,7 @@ class IndexController extends InvokeController
     public function desktop__publish($name = '')
     {
         $publishVersion = Request::header('publish-version');
-        $latestFile = public_path("uploads/desktop/latest");
-        $latestVersion = file_exists($latestFile) ? trim(file_get_contents($latestFile)) : "0.0.1";
+        $latestVersion = PersistentStorage::exists('uploads/desktop/latest') ? trim(PersistentStorage::getContent('uploads/desktop/latest')) : "0.0.1";
         if (strtolower($name) === 'latest') {
             $name = $latestVersion;
         }
@@ -308,35 +308,10 @@ class IndexController extends InvokeController
             $action = Request::get('action');
             $draftPath = "uploads/desktop-draft/{$publishVersion}/";
             if ($action === 'release') {
-                // 将草稿版本发布为正式版本
-                $draftPath = public_path($draftPath);
-                $releasePath = public_path("uploads/desktop/{$publishVersion}/");
-                if (!file_exists($draftPath)) {
+                if (!is_dir(public_path($draftPath))) {
                     return Base::retError("draft version not exists");
                 }
-                if (file_exists($releasePath)) {
-                    Base::deleteDirAndFile($releasePath);
-                }
-                Base::copyDirectory($draftPath, $releasePath);
-                file_put_contents($latestFile, $publishVersion);
-                // 删除旧版本
-                Base::deleteDirAndFile(public_path("uploads/desktop-draft"));
-                $dirs = Base::recursiveDirs(public_path("uploads/desktop"), false);
-                sort($dirs);
-                $num = 0;
-                foreach ($dirs as $dir) {
-                    if (!preg_match("/\/\d+\.\d+\.\d+$/", $dir)) {
-                        continue;
-                    }
-                    $num++;
-                    if ($num < 5) {
-                        continue;   // 保留最新的5个版本
-                    }
-                    if (filemtime($dir) > time() - 3600 * 24 * 30) {
-                        continue;   // 保留最近30天的版本
-                    }
-                    Base::deleteDirAndFile($dir);
-                }
+                $this->releaseDesktopDraft($publishVersion, $draftPath);
                 return Base::retSuccess('success');
             }
             // 上传草稿版本
@@ -350,73 +325,132 @@ class IndexController extends InvokeController
 
         // 列表（访问路径 desktop/publish/{version}）
         if (preg_match("/^v*(\d+\.\d+\.\d+)$/", $name, $match)) {
-            $paths = [
-                "uploads/desktop/{$match[1]}/",
-                "uploads/desktop/v{$match[1]}/",
-                "uploads/desktop-draft/{$match[1]}/",
-                "uploads/desktop-draft/v{$match[1]}/",
-            ];
-            $avaiPath = null;
-            foreach ($paths as $path) {
-                $dirPath = public_path($path);
-                $isDraft = str_contains($path, 'draft');
-                if (is_dir($dirPath)) {
-                    $avaiPath = $path;
-                    break;
-                }
-            }
+            [$avaiPath, $isDraft] = $this->resolveDesktopPublishPath($match[1]);
             abort_if(empty($avaiPath), 404);
-            $lists = Base::recursiveFiles($dirPath, false);
-            $files = [];
-            foreach ($lists as $file) {
-                if (preg_match('/\.(zip|yml|yaml|blockmap)$/i', $file) || str_ends_with($file, '-win.exe')) {
-                    continue;
-                }
-                $fileName = basename($file, $dirPath);
-                $fileSize = filesize($file);
-                $files[] = [
-                    'name' => $fileName,
-                    'time' => date("Y-m-d H:i:s", filemtime($file)),
-                    'size' => $fileSize > 0 ? Base::readableBytes($fileSize) : 0,
-                    'url' => Base::fillUrl(Base::joinPath($avaiPath, $fileName)),
-                ];
-            }
-            $otherVersion = [];
-            $dirs = Base::recursiveDirs(public_path("uploads/desktop"), false);
-            foreach ($dirs as $dir) {
-                if (!preg_match("/\/\d+\.\d+\.\d+$/", $dir)) {
-                    continue;
-                }
-                $version = basename($dir);
-                if ($version === $match[1]) {
-                    continue;
-                }
-                $otherVersion[] = [
-                    'version' => $version,
-                    'url' => Base::fillUrl("desktop/publish/{$version}"),
-                ];
-            }
             //
             return view('desktop', [
                 'system_alias' => Base::settingFind('system', 'system_alias', 'WebPage'),
                 'version' => $match[1],
-                'files' => $files,
+                'files' => $this->desktopPublishFiles($avaiPath, $isDraft),
                 'is_draft' => $isDraft,
                 'latest_version' => $latestVersion,
-                'other_version' => array_reverse($otherVersion),
+                'other_version' => $this->desktopOtherVersions($match[1]),
             ]);
         }
 
         // 下载（Latest 版本内的文件，访问路径 desktop/publish/{fileName}）
         if ($name) {
-            $filePath = public_path("uploads/desktop/{$latestVersion}/{$name}");
-            if (file_exists($filePath)) {
-                return Response::download($filePath);
+            $key = "uploads/desktop/{$latestVersion}/" . basename($name);
+            if (PersistentStorage::exists($key)) {
+                if (PersistentStorage::usesS3()) {
+                    return Redirect::away(PersistentStorage::temporaryUrl($key, now()->addMinutes(10)));
+                }
+                return Response::download(public_path($key));
             }
         }
 
         // 404
         abort(404);
+    }
+
+    private function releaseDesktopDraft(string $publishVersion, string $draftPath): void
+    {
+        $draftDirectory = public_path($draftPath);
+        if (!is_dir($draftDirectory)) {
+            return;
+        }
+
+        $releasePrefix = "uploads/desktop/{$publishVersion}/";
+        PersistentStorage::deleteDirectory($releasePrefix);
+        $files = Base::recursiveFiles($draftDirectory, true);
+        foreach ($files as $file) {
+            $relative = ltrim(str_replace('\\', '/', substr($file, strlen(rtrim($draftDirectory, DIRECTORY_SEPARATOR)) + 1)), '/');
+            PersistentStorage::putFile($releasePrefix . $relative, $file);
+        }
+        PersistentStorage::putContent('uploads/desktop/latest', $publishVersion);
+        Base::deleteDirAndFile(public_path("uploads/desktop-draft"));
+        $this->cleanupOldDesktopVersions();
+    }
+
+    private function cleanupOldDesktopVersions(): void
+    {
+        $versions = array_values(array_filter(PersistentStorage::listDirectories('uploads/desktop/'), static function (string $dir): bool {
+            return preg_match("/\/\d+\.\d+\.\d+$/", $dir) === 1;
+        }));
+        usort($versions, static fn (string $a, string $b): int => version_compare(basename($b), basename($a)));
+        foreach ($versions as $index => $dir) {
+            if ($index < 5) {
+                continue;
+            }
+            if ($this->desktopVersionLastModified($dir) > time() - 3600 * 24 * 30) {
+                continue;
+            }
+            PersistentStorage::deleteDirectory($dir . '/');
+        }
+    }
+
+    private function desktopVersionLastModified(string $dir): int
+    {
+        $timestamps = array_map(static fn (string $file): int => PersistentStorage::lastModified($file), PersistentStorage::listFiles($dir . '/', true));
+        return $timestamps === [] ? 0 : max($timestamps);
+    }
+
+    private function resolveDesktopPublishPath(string $version): array
+    {
+        foreach (["uploads/desktop/{$version}/", "uploads/desktop/v{$version}/"] as $path) {
+            if (PersistentStorage::listFiles($path, false) !== []) {
+                return [$path, false];
+            }
+        }
+        foreach (["uploads/desktop-draft/{$version}/", "uploads/desktop-draft/v{$version}/"] as $path) {
+            if (is_dir(public_path($path))) {
+                return [$path, true];
+            }
+        }
+        return [null, false];
+    }
+
+    private function desktopPublishFiles(string $path, bool $isDraft): array
+    {
+        $files = [];
+        $list = $isDraft
+            ? Base::recursiveFiles(public_path($path), false)
+            : PersistentStorage::listFiles($path, false);
+        foreach ($list as $file) {
+            $fileName = $isDraft ? basename($file) : substr($file, strlen($path));
+            if (preg_match('/\.(zip|yml|yaml|blockmap)$/i', $fileName) || str_ends_with($fileName, '-win.exe')) {
+                continue;
+            }
+            $fileSize = $isDraft ? filesize($file) : PersistentStorage::size($file);
+            $fileTime = $isDraft ? filemtime($file) : PersistentStorage::lastModified($file);
+            $files[] = [
+                'name' => $fileName,
+                'time' => date("Y-m-d H:i:s", $fileTime),
+                'size' => $fileSize > 0 ? Base::readableBytes($fileSize) : 0,
+                'url' => Base::fillUrl(Base::joinPath($path, $fileName)),
+            ];
+        }
+        return $files;
+    }
+
+    private function desktopOtherVersions(string $currentVersion): array
+    {
+        $otherVersion = [];
+        foreach (PersistentStorage::listDirectories('uploads/desktop/') as $dir) {
+            if (!preg_match("/\/\d+\.\d+\.\d+$/", $dir)) {
+                continue;
+            }
+            $version = basename($dir);
+            if ($version === $currentVersion) {
+                continue;
+            }
+            $otherVersion[] = [
+                'version' => $version,
+                'url' => Base::fillUrl("desktop/publish/{$version}"),
+            ];
+        }
+        usort($otherVersion, static fn (array $a, array $b): int => version_compare($b['version'], $a['version']));
+        return $otherVersion;
     }
 
     /**

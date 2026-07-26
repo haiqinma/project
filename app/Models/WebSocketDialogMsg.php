@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use App\Module\Base;
 use App\Module\Doo;
 use App\Module\Image;
+use App\Services\PersistentStorage;
 use App\Tasks\PushTask;
 use App\Models\ProjectTaskRelation;
 use App\Exceptions\ApiException;
@@ -1112,15 +1113,10 @@ class WebSocketDialogMsg extends AbstractModel
         // 图片 [:IMAGE:className:width:height:src:alt:]
         preg_match_all("/<img\s+src=\"data:image\/(png|jpg|jpeg|webp|gif);base64,(.*?)\"(.*?)>(<\/img>)*/s", $text, $matchs);
         foreach ($matchs[2] as $key => $base64) {
-            $imagePath = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/";
-            Base::makeDir(public_path($imagePath));
-            $imagePath .= md5s($base64) . "." . $matchs[1][$key];
-            if (Base::saveContentImage(public_path($imagePath), base64_decode($base64))) {
-                $imageSize = getimagesize(public_path($imagePath));
-                if ($extension = Image::thumbImage(public_path($imagePath), public_path($imagePath) . "_thumb.{*}", 320, 0, 80)) {
-                    $imagePath .= "_thumb.{$extension}";
-                }
-                $text = str_replace($matchs[0][$key], "[:IMAGE:browse:{$imageSize[0]}:{$imageSize[1]}:{$imagePath}::]", $text);
+            $imagePath = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/" . md5s($base64) . "." . $matchs[1][$key];
+            $imageInfo = self::storePersistentImage($imagePath, base64_decode($base64));
+            if ($imageInfo) {
+                $text = str_replace($matchs[0][$key], "[:IMAGE:browse:{$imageInfo['width']}:{$imageInfo['height']}:{$imageInfo['path']}::]", $text);
             }
         }
         // 表情图片
@@ -1135,32 +1131,26 @@ class WebSocketDialogMsg extends AbstractModel
                 preg_match("/src=\"(.*?)\"/", $str, $matchSrc);
                 if ($matchSrc) {
                     $srcMd5 = md5($matchSrc[1]);
-                    $imagePath = "uploads/emosearch/" . substr($srcMd5, 0, 2) . "/" . substr($srcMd5, 32 - 2) . "/";
-                    Base::makeDir(public_path($imagePath));
-                    $imagePath .= md5s($matchSrc[1]);
-                    if (file_exists(public_path($imagePath))) {
-                        $imageSize = getimagesize(public_path($imagePath));
+                    $imagePath = "uploads/emosearch/" . substr($srcMd5, 0, 2) . "/" . substr($srcMd5, 32 - 2) . "/" . md5s($matchSrc[1]);
+                    if (PersistentStorage::isPersistentKey($imagePath) && PersistentStorage::exists($imagePath)) {
+                        $imageSize = self::persistentImageSize($imagePath);
                     } else {
                         $image = file_get_contents($matchSrc[1]);
-                        if ($image && file_put_contents(public_path($imagePath), $image)) {
-                            $imageSize = getimagesize(public_path($imagePath));
-                            // 添加后缀
-                            if ($imageSize && !str_contains($imagePath, '.')) {
-                                preg_match("/^image\/(png|jpg|jpeg|webp|gif)$/", $imageSize['mime'], $matchMine);
-                                if ($matchMine) {
-                                    $imageNewPath = $imagePath . "." . $matchMine[1];
-                                    if (rename(public_path($imagePath), public_path($imageNewPath))) {
-                                        $imagePath = $imageNewPath;
-                                    }
-                                }
+                        if ($image) {
+                            $tmpInfo = @getimagesizefromstring($image);
+                            if ($tmpInfo && !str_contains($imagePath, '.')) {
+                                preg_match("/^image\/(png|jpg|jpeg|webp|gif)$/", $tmpInfo['mime'], $matchMine);
+                                $imagePath .= $matchMine ? "." . $matchMine[1] : "";
                             }
+                            $imageInfo = self::storePersistentImage($imagePath, $image, false);
+                            $imageSize = $imageInfo ? [$imageInfo['width'], $imageInfo['height']] : null;
                         }
                     }
                 }
-            } elseif (file_exists(public_path($matchAsset[1]))) {
+            } elseif (PersistentStorage::isPersistentKey($matchAsset[1]) && PersistentStorage::exists($matchAsset[1])) {
                 $imagePath = $matchAsset[1];
                 $imageName = $matchName[1];
-                $imageSize = getimagesize(public_path($matchAsset[1]));
+                $imageSize = self::persistentImageSize($matchAsset[1]);
             }
             if ($imageSize) {
                 $text = str_replace($matchs[0][$key], "[:IMAGE:emoticon:{$imageSize[0]}:{$imageSize[1]}:{$imagePath}:{$imageName}:]", $text);
@@ -1176,7 +1166,7 @@ class WebSocketDialogMsg extends AbstractModel
             if (str_starts_with($parsed['path'], "/uploads/")) {
                 $relativePath = ltrim($parsed['path'], "/");
                 $relativePath = Base::thumbRestore($relativePath);
-                if (file_exists(public_path($relativePath))) {
+                if (PersistentStorage::isPersistentKey($relativePath) && PersistentStorage::exists($relativePath)) {
                     $str = "{{RemoteURL}}{$relativePath}";
                 }
             }
@@ -1193,26 +1183,17 @@ class WebSocketDialogMsg extends AbstractModel
                 $imagePath = Base::leftDelete($str, "{{RemoteURL}}");
                 $imagePath = Base::thumbRestore($imagePath);
             } else {
-                $imagePath = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/";
-                Base::makeDir(public_path($imagePath));
-                $imagePath .= md5s($str) . "." . $matchs[3][$key];
+                $imagePath = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/" . md5s($str) . "." . $matchs[3][$key];
             }
-            if (file_exists(public_path($imagePath))) {
-                $imageSize = getimagesize(public_path($imagePath));
-                if ($extension = Image::thumbImage(public_path($imagePath), public_path($imagePath) . "_thumb.{*}", 320, 0, 80)) {
-                    $imagePath .= "_thumb.{$extension}";
-                }
-                $text = str_replace($matchs[0][$key], "[:IMAGE:browse:{$imageSize[0]}:{$imageSize[1]}:{$imagePath}::]", $text);
+            if (PersistentStorage::isPersistentKey($imagePath) && PersistentStorage::exists($imagePath)) {
+                $imageInfo = self::persistentImageInfo($imagePath);
+                $text = str_replace($matchs[0][$key], "[:IMAGE:browse:{$imageInfo['width']}:{$imageInfo['height']}:{$imageInfo['path']}::]", $text);
             } else {
                 $image = file_get_contents($str);
                 if (empty($image)) {
                     $text = str_replace($matchs[0][$key], "[:IMAGE:browse:90:90:images/other/imgerr.jpg::]", $text);
-                } else if (Base::saveContentImage(public_path($imagePath), $image)) {
-                    $imageSize = getimagesize(public_path($imagePath));
-                    if ($extension = Image::thumbImage(public_path($imagePath), public_path($imagePath) . "_thumb.{*}", 320, 0, 80)) {
-                        $imagePath .= "_thumb.{$extension}";
-                    }
-                    $text = str_replace($matchs[0][$key], "[:IMAGE:browse:{$imageSize[0]}:{$imageSize[1]}:{$imagePath}::]", $text);
+                } else if ($imageInfo = self::storePersistentImage($imagePath, $image)) {
+                    $text = str_replace($matchs[0][$key], "[:IMAGE:browse:{$imageInfo['width']}:{$imageInfo['height']}:{$imageInfo['path']}::]", $text);
                 }
             }
         }
@@ -1405,19 +1386,17 @@ class WebSocketDialogMsg extends AbstractModel
                     throw new ApiException('获取地图快照失败');
                 }
                 $fileUrl = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/" . md5s($msg['thumb']) . ".jpg";
-                $filePath = public_path($fileUrl);
-                Base::makeDir(dirname($filePath));
-                if (!Base::saveContentImage($filePath, $thumb)) {
+                $imageInfo = self::storePersistentImage($fileUrl, $thumb, false);
+                if (!$imageInfo) {
                     throw new ApiException('保存地图快照失败');
                 }
-                $imageSize = getimagesize($filePath);
-                if ($imageSize[0] < 20 || $imageSize[1] < 20) {
+                if ($imageInfo['width'] < 20 || $imageInfo['height'] < 20) {
                     throw new ApiException('地图快照尺寸太小');
                 }
                 $msg['thumb_original'] = $msg['thumb'];
                 $msg['thumb'] = $fileUrl;
-                $msg['width'] = $imageSize[0];
-                $msg['height'] = $imageSize[1];
+                $msg['width'] = $imageInfo['width'];
+                $msg['height'] = $imageInfo['height'];
             }
         }
         if ($type === 'merge-forward') {
@@ -1608,6 +1587,71 @@ class WebSocketDialogMsg extends AbstractModel
                 'msgs' => $msgs
             ]);
         });
+    }
+
+    private static function storePersistentImage(string $key, string $content, bool $createThumb = true): ?array
+    {
+        $temporary = storage_path('app/tmp/dialog-image/' . bin2hex(random_bytes(16)));
+        Base::makeDir(dirname($temporary));
+        try {
+            if (!Base::saveContentImage($temporary, $content)) {
+                return null;
+            }
+            $imageSize = getimagesize($temporary);
+            if ($imageSize === false) {
+                return null;
+            }
+            PersistentStorage::putFile($key, $temporary);
+            $path = $key;
+            if ($createThumb && $extension = Image::thumbImage($temporary, $temporary . "_thumb.{*}", 320, 0, 80)) {
+                $path = $key . "_thumb.{$extension}";
+                PersistentStorage::putFile($path, $temporary . "_thumb.{$extension}");
+                @unlink($temporary . "_thumb.{$extension}");
+            }
+            return [
+                'path' => $path,
+                'width' => $imageSize[0],
+                'height' => $imageSize[1],
+            ];
+        } finally {
+            @unlink($temporary);
+        }
+    }
+
+    private static function persistentImageInfo(string $key, bool $createThumb = true): array
+    {
+        [$localPath] = PersistentStorage::readableLocalPath($key);
+        try {
+            $imageSize = getimagesize($localPath);
+            $path = $key;
+            if ($createThumb && $extension = Image::thumbImage($localPath, $localPath . "_thumb.{*}", 320, 0, 80)) {
+                $path = $key . "_thumb.{$extension}";
+                PersistentStorage::putFile($path, $localPath . "_thumb.{$extension}");
+                @unlink($localPath . "_thumb.{$extension}");
+            }
+            return [
+                'path' => $path,
+                'width' => $imageSize[0] ?? 90,
+                'height' => $imageSize[1] ?? 90,
+            ];
+        } finally {
+            if (PersistentStorage::usesS3()) {
+                @unlink($localPath);
+            }
+        }
+    }
+
+    private static function persistentImageSize(string $key): ?array
+    {
+        [$localPath] = PersistentStorage::readableLocalPath($key);
+        try {
+            $imageSize = getimagesize($localPath);
+            return $imageSize === false ? null : [$imageSize[0], $imageSize[1]];
+        } finally {
+            if (PersistentStorage::usesS3()) {
+                @unlink($localPath);
+            }
+        }
     }
 
     /**

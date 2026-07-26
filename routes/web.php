@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\ComplaintController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\UploadController;
+use App\Http\Controllers\StorageObjectController;
 
 /*
 |--------------------------------------------------------------------------
@@ -84,6 +85,8 @@ Route::prefix('api')->middleware(['webapi'])->group(function () {
 /**
  * 页面
  */
+Route::get('/uploads/{path}', StorageObjectController::class)->where('path', '.*');
+
 Route::middleware(['webapi'])->group(function () {
     Route::any('/',                                     IndexController::class);
     Route::any('/{method}',                             IndexController::class);

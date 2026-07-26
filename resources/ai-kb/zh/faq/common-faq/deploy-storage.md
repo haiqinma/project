@@ -15,6 +15,8 @@ aliases:
   - 清理空间
   - Warehouse S3 文件存储
   - FILE_STORAGE_DISK
+  - persistent-storage:migrate-s3
+  - persistent-storage:cleanup-local
 related_tools: []
 related_pages: []
 prerequisites:
@@ -43,21 +45,39 @@ last_verified: v0.0.1
 | `public/uploads/tmp/` | 上传临时文件 | 可以，定时清理 |
 
 ## Warehouse S3 文件存储
-FileCenter 附件可设置 `FILE_STORAGE_DISK=s3` 写入 Warehouse S3 兼容服务。`S3_BUCKET=services`、`S3_PREFIX=project` 对应 Warehouse 凭证范围 `/services/project`；`S3_PATH_STYLE=true` 必须保留。
+Project 可设置 `FILE_STORAGE_DISK=s3` 将持久化上传写入 Warehouse S3 兼容服务。`S3_BUCKET=services`、`S3_PREFIX=project` 对应 Warehouse 凭证范围 `/services/project`；`S3_PATH_STYLE=true` 必须保留。
 
 - `FILESYSTEM_DRIVER` 保持 `local`，不要全局切换为 `s3`。
-- V1 只覆盖文件中心附件；聊天附件、头像、文档内嵌图片和临时上传仍使用本地目录。
-- 文件中心附件本地副本是预览、OnlyOffice、压缩下载的兼容缓存；本地缓存缺失时会从 S3 恢复。
-- 不要直接删除 `public/uploads/file/`，也不要直接删除 `services/project` 中的对象。
+- `FILE_STORAGE_DISK=local` 时，持久化文件只以 `public/uploads` 为准；`FILE_STORAGE_DISK=s3` 时，持久化文件只以 S3 bucket/prefix 为准。
+- `uploads/tmp/` 和 `uploads/desktop-draft/` 是本地临时目录，不迁移到 S3，也不能作为业务数据引用。
+- S3 模式下，预览、下载、图片处理、压缩打包需要本地路径时，只使用 `storage/app/tmp` 下的一次性临时文件，不恢复到 `public/uploads`。
+- 不要在同一实例中长期保留“一部分本地、一部分 S3”的混合状态。
 
-## 迁移历史文件中心附件
-切换 `FILE_STORAGE_DISK=s3` 只影响之后保存的文件中心内容，旧的 `file_contents` 记录仍从本地读取。管理员应先执行：
+## 迁移历史持久化文件
+从本地切换到 S3 必须先迁移历史持久化文件，不能只改 `.env`。管理员应先执行检查命令：
 
 ```bash
-./cmd artisan file-storage:migrate-s3
+./cmd artisan persistent-storage:migrate-s3
 ```
 
-该命令默认仅检查，不上传也不改数据库。确认输出后再执行 `./cmd artisan file-storage:migrate-s3 --execute`。每个附件上传后会从 S3 读回并校验大小与 SHA-256，校验成功才标记为 S3；本地缓存不会删除。命令只处理 `uploads/file/` 的文件中心内容，不处理聊天附件、头像、文档内嵌图片或临时上传。缺少本地文件的记录会被列出但不会改写，需先从备份恢复后重试。
+该命令默认仅检查，不上传、不写 manifest。确认输出后，执行：
+
+```bash
+./cmd artisan persistent-storage:migrate-s3 --execute --manifest=storage/app/persistent-storage-migration/manifest.jsonl
+```
+
+命令只扫描注册的持久化命名空间，跳过 `uploads/tmp/`、`uploads/desktop-draft/` 等本地临时目录；每个对象上传到 S3 后会读回校验大小和 SHA-256，并把 key、size、sha256 写入 JSONL manifest。
+
+迁移切换顺序是：保持 `FILE_STORAGE_DISK=local` 执行首轮迁移；停写或进入维护窗口；再次执行迁移同步最终增量；修改 `.env` 为 `FILE_STORAGE_DISK=s3`；清配置并重启 LaravelS；验证图片、下载、聊天、任务、桌面包和 Office 流程。
+
+确认 S3 模式稳定后，再用 manifest 清理本地持久化文件：
+
+```bash
+./cmd artisan persistent-storage:cleanup-local storage/app/persistent-storage-migration/manifest.jsonl
+./cmd artisan persistent-storage:cleanup-local storage/app/persistent-storage-migration/manifest.jsonl --execute
+```
+
+清理命令要求当前已经是 `FILE_STORAGE_DISK=s3`，会同时校验本地文件和 S3 对象都与 manifest 的 size/SHA-256 一致，才删除本地文件。`file-storage:migrate-s3` 只是历史 FileCenter 兼容命令，新迁移应使用 `persistent-storage:migrate-s3`。
 
 ## 解决
 

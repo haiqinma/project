@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\FileContent;
 use App\Module\Base;
-use App\Services\FileStorage;
+use App\Services\PersistentStorage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -41,7 +41,7 @@ class MigrateFileStorageToS3 extends Command
         }
 
         try {
-            FileStorage::validateConfiguration();
+            PersistentStorage::validateConfiguration();
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
             return self::FAILURE;
@@ -125,13 +125,13 @@ class MigrateFileStorageToS3 extends Command
                 throw new RuntimeException("Unable to calculate checksum: {$path}");
             }
 
-            $storage = FileStorage::store($path);
-            $actual = $this->remoteChecksum($storage['key']);
+            PersistentStorage::putFile($path, $localPath);
+            $actual = $this->remoteChecksum($path);
             if ($actual['size'] !== $expectedSize || !hash_equals($expectedHash, $actual['hash'])) {
                 throw new RuntimeException("S3 verification failed: {$path}");
             }
 
-            $content['storage'] = $storage;
+            $content['storage'] = ['disk' => 's3', 'key' => $path];
             $updated = FileContent::query()
                 ->whereKey($fileContent->id)
                 ->whereNull('deleted_at')

@@ -161,7 +161,7 @@ Use Caddy or Nginx in front of LaravelS for HTTPS, WebSocket forwarding, upload 
 
 If an administrator already exists, the command prints it and leaves passwords unchanged. If no administrator exists, it creates or repairs `admin@yeying.com`, prints a one-time initial password, and requires password change on first login.
 
-Back up MySQL, `public/uploads` and production configuration before upgrades. See `docs/` for the deployment, backup and recovery details.
+Back up MySQL, persistent uploads and production configuration before upgrades. See `docs/` for the deployment, backup and recovery details.
 
 For versioned releases behind a `project` symlink, keep runtime data outside the release directory. Run installation with the same shared directory for every version:
 
@@ -169,7 +169,9 @@ For versioned releases behind a `project` symlink, keep runtime data outside the
 YEYING_SHARED_DIR=/opt/deploy/shared/project ./scripts/install.sh
 ```
 
-This preserves and links `.env`, `storage/` and `public/uploads/`. S3-backed FileCenter attachments still use `public/uploads/file/` as a compatibility cache, while historical local attachments, avatars and embedded images continue to depend on the shared uploads directory. Do not create each release with an independent `public/uploads/` directory.
+This preserves and links `.env`, `storage/` and `public/uploads/`. In local storage mode, `public/uploads/` is the persistent file source of truth and must be shared across releases. In S3 mode, the S3 bucket/prefix is the persistent source of truth; `public/uploads/tmp/` and other local working files remain disposable. Do not create each release with an independent runtime data directory.
+
+For S3 migration, follow `docs/storage-s3-migration-runbook.md`; do not switch `FILE_STORAGE_DISK=s3` until the manifest-backed migration and final delta are verified.
 
 ## License
 
