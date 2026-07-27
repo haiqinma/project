@@ -33,13 +33,15 @@ last_verified: v0.0.1
 ## 操作步骤
 1. 进入应用商店，浏览插件列表（左侧分类：官方 / 社区）
 2. 点击想装的插件，看说明、版本号、作者、依赖资源
-3. 点「安装」按钮，AppStore 微服务后台拉镜像并启动容器
-4. 等待状态从「安装中」变成「已安装」（时间从十秒到数分钟，取决于镜像大小）
-5. 安装完成后到「应用」页刷新，对应入口出现
+3. 点「安装」按钮，Project 调用 Node AppStore 创建 Runtime Task
+4. 部署机 Agent 领取任务，校验 release、拉取固定 digest 镜像、启动容器并做健康检查
+5. 等待状态从「安装中」变成「已安装」（时间从十秒到数分钟，取决于镜像大小）
+6. 安装完成后到「应用」页刷新，对应入口出现
 
 ## 安装做了什么
-- 在 `docker/appstore/config/{appId}/` 写入 `config.yml`，包含 `status: installed`、`install_at`、`install_version`、`params`
-- 把对应 `docker-compose.yml` 起动；新容器与 YeYing 共享网络
+- Node AppStore 创建 `install` Runtime Task，并记录目标版本与 release digest
+- 部署机 Agent 只接受固定镜像 digest、受控环境变量、回环地址端口和命名卷
+- Agent 写入 `docker/appstore/config/{appId}/config.yml` 与受控 Nginx 反代配置
 - 部分插件会通过 menu_items 注册微应用入口到普通成员的「应用」页
 
 ## 安装成功验证
@@ -52,7 +54,7 @@ ai、approve、checkin、face、office、drawio、minder、okr、search、filevi
 
 ## 不支持
 - 不支持手动改 `config.yml` 后立即生效（要走 AppStore 流程，否则缓存与状态不一致）
-- 不支持选择历史版本安装（除非通过升级）
+- 不支持安装任意 Docker 镜像或发布包自带的 Nginx 配置
 
 ## 装不上时
 见 [[appstore.cannot-install.faq]]。

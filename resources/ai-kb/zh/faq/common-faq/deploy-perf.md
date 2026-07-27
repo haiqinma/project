@@ -48,7 +48,7 @@ last_verified: v0.0.1
 **Swoole 配置**
 - `worker_num` 默认 = 核数，确认多核机器充分用到
 - `task_worker_num` 偏小会导致后台任务积压
-- 改完必须 `./cmd php restart`
+- 改完必须 `./scripts/starter.sh restart`
 
 **Redis 容量**
 - 默认无 maxmemory 限制，大用户量会撑爆

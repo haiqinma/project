@@ -52,7 +52,7 @@ last_verified: v0.0.1
 
 ## 不要做
 - 不要跳过 cmd 直接 git pull + composer install，会漏掉迁移和重启
-- 改了 .env / docker-compose.yml 关键配置后必须 `./cmd php restart`
+- 改了 .env / docker-compose.yml 关键配置后必须 `./scripts/starter.sh restart`
 
 ## 相关
 - 备份：[[common-faq.deploy-backup.faq]]

@@ -193,19 +193,16 @@ rand_string() {
     fi
 }
 
-# 重启php
+# 重启应用
 restart_php() {
-    local RES=`container_exec php "supervisorctl update php"`
-    if [ -z "$RES" ]; then
-        RES=`container_exec php "supervisorctl restart php"`
+    local starter="${WORK_DIR}/scripts/starter.sh"
+    if [ -x "$starter" ] && command -v php >/dev/null 2>&1; then
+        "$starter" restart
+        return
     fi
-    local IN=`echo $RES | grep "ERROR"`
-    if [[ "$IN" != "" ]]; then
-        $COMPOSE stop php
-        $COMPOSE start php
-    else
-        echo "$RES"
-    fi
+
+    error "$(msg '未找到宿主机启动脚本或 PHP，请使用 scripts/starter.sh restart 重启应用')"
+    exit 1
 }
 
 # 切换调试模式

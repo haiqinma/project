@@ -20,7 +20,7 @@ negative:
   - 卸载会停容器并标记 status，但不一定立刻删数据卷
   - 不支持卸载 `appstore` 本身（强制保留）
   - 卸载后用户在「应用」页对应入口立即消失，正在使用的会话可能报错
-last_verified: v1.7.90
+last_verified: v0.0.1
 ---
 
 # 卸载一个插件
@@ -32,13 +32,14 @@ last_verified: v1.7.90
 1. 进入应用商店，定位到已安装的插件
 2. 点击「卸载」按钮
 3. 确认弹窗：通常会提示「卸载后相关数据如何处理」
-4. 等待 Runtime Agent 停容器并移除本地安装状态
-5. 刷新「应用」页，对应菜单消失
+4. Project 调用 Node AppStore 创建 `uninstall` Runtime Task
+5. 等待 Runtime Agent 停容器并移除本地安装状态
+6. 刷新「应用」页，对应菜单消失
 
 ## 卸载做了什么
-- 删除 `docker/appstore/config/{appId}/` 的安装状态和反代配置
-- 调 `docker compose down --remove-orphans` 停掉对应容器
-- 触发主程序缓存失效：`RequestContext::save('app_installed_xxx', false)`
+- Node AppStore 创建 `uninstall` Runtime Task
+- Agent 调 `docker compose down --remove-orphans` 停掉对应容器，但默认保留命名卷
+- Agent 删除 `docker/appstore/config/{appId}/` 的安装状态和反代配置
 - 之后所有对该插件的后端调用会被 `Apps::isInstalledThrow()` 拦截，抛 ApiException
 
 ## 卸载会影响的数据

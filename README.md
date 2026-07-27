@@ -161,7 +161,7 @@ Use Caddy or Nginx in front of LaravelS for HTTPS, WebSocket forwarding, upload 
 
 If an administrator already exists, the command prints it and leaves passwords unchanged. If no administrator exists, it creates or repairs `admin@yeying.com`, prints a one-time initial password, and requires password change on first login.
 
-Back up MySQL, persistent uploads and production configuration before upgrades. See `docs/` for the deployment, backup and recovery details.
+Back up MySQL, persistent uploads and production configuration before upgrades. Follow `docs/production-upgrade-runbook.md` for the production upgrade sequence.
 
 For versioned releases behind a `project` symlink, keep runtime data outside the release directory. Run installation with the same shared directory for every version:
 

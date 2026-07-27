@@ -287,7 +287,7 @@ sudo ./scripts/ubuntu-deps.sh --install
 ./cmd ensure-admin
 ```
 
-生产升级前请先备份数据库和 `public/uploads`。升级、备份、systemd 自动启动和恢复流程详见 `docs/`。
+生产升级前请先备份数据库和持久文件。生产升级顺序按 `docs/production-upgrade-runbook.md` 执行；S3 迁移按 `docs/storage-s3-migration-runbook.md` 执行。
 
 ## License
 
