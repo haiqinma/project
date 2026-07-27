@@ -10,6 +10,7 @@ use App\Models\WebSocket;
 use App\Module\AI;
 use App\Module\Apps;
 use App\Module\Base;
+use App\Services\PersistentStorage;
 use App\Tasks\PushTask;
 use Cache;
 use Illuminate\Support\Str;
@@ -560,9 +561,8 @@ class AssistantController extends AbstractController
     {
         $images = Base::json2array($session->images);
         foreach ($images as $path) {
-            $fullPath = public_path($path);
-            if (file_exists($fullPath)) {
-                @unlink($fullPath);
+            if (PersistentStorage::isPersistentKey($path) && PersistentStorage::exists($path)) {
+                PersistentStorage::delete($path);
             }
         }
     }

@@ -4,6 +4,7 @@ namespace App\Exceptions;
 
 use App\Module\Base;
 use App\Module\Image;
+use App\Services\PersistentStorage;
 
 /**
  * 图片路径处理（原 Exceptions\Handler::ImagePathHandler，新结构下由 bootstrap/app.php
@@ -66,8 +67,13 @@ class ImagePathHandler
 
             // 文件不存在处理
             $sourcePath = public_path($file);
+            $temporarySource = null;
             if (!file_exists($sourcePath)) {
-                return null;
+                if (!PersistentStorage::usesS3() || !PersistentStorage::exists($file)) {
+                    return null;
+                }
+                $temporarySource = PersistentStorage::copyToTemporary($file);
+                $sourcePath = $temporarySource;
             }
 
             // 判断删除多余文件
@@ -144,7 +150,12 @@ class ImagePathHandler
                 } else {
                     $image->destroy();
                 }
-            } catch (\ImagickException) { }
+            } catch (\ImagickException) {
+            } finally {
+                if ($temporarySource !== null) {
+                    @unlink($temporarySource);
+                }
+            }
         }
 
         // 容错处理

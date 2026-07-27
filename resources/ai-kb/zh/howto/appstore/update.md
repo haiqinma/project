@@ -34,7 +34,7 @@ last_verified: v1.7.90
 2. 点击插件 → 「更新」
 3. 阅读更新日志，确认无破坏性变更
 4. 点「确认更新」
-5. AppStore 微服务拉新镜像 → 停旧容器 → 起新容器
+5. Runtime Agent 拉取固定 digest 镜像、启动新版本并做健康检查
 6. `config.yml` 的 `install_version` 更新
 
 ## 更新期间会发生什么
@@ -43,7 +43,7 @@ last_verified: v1.7.90
 - 与该插件交互的 AI 工具、机器人会失败（前端通常会重试）
 
 ## 更新失败怎么办
-- 多数因为新镜像拉取失败（网络、镜像源），先看 [[appstore.cannot-install.faq]] 的网络部分
+- 拉取或健康检查失败时，Agent 会自动恢复上一份已验证 release；仍失败再看 [[appstore.cannot-install.faq]] 的网络部分
 - 容器起不来：服务器 `docker logs` 看日志
 - 状态卡在「更新中」：到 `docker/appstore/config/{appId}/config.yml` 检查状态字段
 - 必要时卸载重装
@@ -57,4 +57,4 @@ last_verified: v1.7.90
 ## 不支持
 - 不支持选择目标版本号升级（只能升到最新）
 - 不支持自动定时升级
-- 不支持回滚（除非自己留旧镜像 + 手动改 docker-compose）
+- 不支持选择任意历史版本；仅支持自动恢复上一份已验证 release

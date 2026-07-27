@@ -13,12 +13,12 @@ use App\Models\FileUser;
 use App\Models\User;
 use App\Models\UserRecentItem;
 use App\Module\Base;
-use App\Services\FileStorage;
 use App\Module\Down;
 use App\Module\Lock;
 use App\Module\Timer;
 use App\Module\Ihttp;
 use App\Module\Manticore\ManticoreFile;
+use App\Services\PersistentStorage;
 use Response;
 use Swoole\Coroutine;
 use Carbon\Carbon;
@@ -655,13 +655,18 @@ class FileController extends AbstractController
             $isRep = false;
             preg_match_all("/<img\s+src=\"data:image\/(png|jpg|jpeg|webp);base64,(.*?)\"/s", $data['content'], $matchs);
             foreach ($matchs[2] as $key => $text) {
-                $tmpPath = "uploads/file/document/" . date("Ym") . "/" . $id . "/attached/";
-                Base::makeDir(public_path($tmpPath));
-                $tmpPath .= md5($text) . "." . $matchs[1][$key];
-                if (Base::saveContentImage(public_path($tmpPath), base64_decode($text))) {
-                    $paramet = getimagesize(public_path($tmpPath));
-                    $data['content'] = str_replace($matchs[0][$key], '<img src="' . Base::fillUrl($tmpPath) . '" original-width="' . $paramet[0] . '" original-height="' . $paramet[1] . '"', $data['content']);
-                    $isRep = true;
+                $tmpPath = storage_path('app/tmp/file-content/' . bin2hex(random_bytes(16)));
+                $objectKey = "uploads/file/document/" . date("Ym") . "/" . $id . "/attached/" . md5($text) . "." . $matchs[1][$key];
+                Base::makeDir(dirname($tmpPath));
+                try {
+                    if (Base::saveContentImage($tmpPath, base64_decode($text))) {
+                        $paramet = getimagesize($tmpPath);
+                        PersistentStorage::putFile($objectKey, $tmpPath);
+                        $data['content'] = str_replace($matchs[0][$key], '<img src="' . Base::fillUrl($objectKey) . '" original-width="' . $paramet[0] . '" original-height="' . $paramet[1] . '"', $data['content']);
+                        $isRep = true;
+                    }
+                } finally {
+                    @unlink($tmpPath);
                 }
             }
             $text = strip_tags($data['content']);
@@ -696,20 +701,16 @@ class FileController extends AbstractController
                 return Base::retError('参数错误');
         }
         $path = "uploads/file/" . $file->type . "/" . date("Ym") . "/" . $id . "/" . md5($contentString);
-        $save = public_path($path);
-        Base::makeDir(dirname($save));
-        file_put_contents($save, $contentString);
-        $storage = FileStorage::store($path);
+        PersistentStorage::putContent($path, $contentString);
         //
         $content = FileContent::createInstance([
             'fid' => $file->id,
             'content' => [
                 'type' => $file->ext,
                 'url' => $path,
-                'storage' => $storage,
             ],
             'text' => $text,
-            'size' => filesize($save),
+            'size' => strlen($contentString),
             'userid' => $user->userid,
         ]);
         $content->save();
@@ -780,17 +781,16 @@ class FileController extends AbstractController
             $parse = parse_url($url);
             $from = 'http://nginx' . $parse['path'] . '?' . $parse['query'];
             $path = 'uploads/file/' . $file->type . '/' . date("Ym") . '/' . $file->id . '/' . $key;
-            $save = public_path($path);
+            $save = storage_path('app/tmp/office-content/' . bin2hex(random_bytes(16)));
             Base::makeDir(dirname($save));
             $res = Ihttp::download($from, $save);
             if (Base::isSuccess($res)) {
-                $storage = FileStorage::store($path);
+                PersistentStorage::putFile($path, $save);
                 $content = FileContent::createInstance([
                     'fid' => $file->id,
                     'content' => [
                         'from' => $from,
                         'url' => $path,
-                        'storage' => $storage,
                     ],
                     'text' => '',
                     'size' => filesize($save),
@@ -803,6 +803,7 @@ class FileController extends AbstractController
                 $file->save();
                 $file->pushMsg('update', $file);
             }
+            @unlink($save);
         }
         return ['error' => 0];
     }
@@ -1231,10 +1232,14 @@ class FileController extends AbstractController
                 ], $userid);
             });
             //
+            $temporaryFiles = [];
             foreach ($files as $file) {
-                File::addFileTreeToZip($zip, $file);
+                File::addFileTreeToZip($zip, $file, $temporaryFiles);
             }
             $zip->close();
+            foreach ($temporaryFiles as $temporaryFile) {
+                @unlink($temporaryFile);
+            }
             //
             if ($progress < 100) {
                 File::pushMsgSimple('compress', [

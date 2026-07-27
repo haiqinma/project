@@ -18,6 +18,7 @@ port="${port:-2222}"
 health_url="${YEYING_HEALTH_URL:-http://127.0.0.1:${port}/}"
 
 ensure_dirs() {
+  chmod 755 "$root_dir"
   mkdir -p "$pid_dir" "$log_dir" "$root_dir/bootstrap/cache" "$root_dir/storage/framework/cache"
   touch "$log_dir/starter.log"
 }

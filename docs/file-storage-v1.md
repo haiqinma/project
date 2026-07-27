@@ -1,6 +1,6 @@
 # File Storage V1
 
-File Storage V1 adds Warehouse S3-compatible storage for FileCenter attachments. It does not replace the Project-wide local filesystem.
+File Storage V1 uses exactly one persistent backend for Project uploads. `FILE_STORAGE_DISK=local` stores persistent objects under `public/uploads`. `FILE_STORAGE_DISK=s3` stores persistent objects in the configured S3-compatible service. The application must not keep a persistent local compatibility cache in S3 mode.
 
 ## Configuration
 
@@ -12,20 +12,55 @@ S3_ENDPOINT=http://127.0.0.1:6066
 S3_PATH_STYLE=true
 ```
 
-`FILESYSTEM_DRIVER` must remain `local`. `FILE_STORAGE_DISK` controls only FileCenter attachment persistence.
+`FILESYSTEM_DRIVER` must remain `local`. `FILE_STORAGE_DISK` controls Project persistent uploads; local temporary processing still uses `storage/app/tmp` and `public/uploads/tmp`.
 
 ## Behavior
 
-1. FileCenter uploads, editor saves, and OnlyOffice callbacks finish local processing first.
-2. The final attachment is copied to the configured S3 disk and records `storage.disk` and `storage.key` in `file_contents.content`.
-3. The local copy remains as a compatibility cache for image URLs, OnlyOffice, previews, and archive downloads.
-4. If an S3-backed attachment cache file is missing, Project restores it from S3 before reading it.
-5. Permanently deleting a FileCenter content record also deletes its S3 object.
+1. Uploads, editor saves, and OnlyOffice callbacks may finish validation and transformation in a local temporary file.
+2. The final object is committed through `PersistentStorage` to the configured backend.
+3. S3 mode removes the local final copy after the object store accepts the write.
+4. Previews, downloads, image processing, and archive downloads that require a pathname use a disposable file under `storage/app/tmp`.
+5. Permanently deleting a content record deletes the object from the configured backend.
 
 ## Scope
 
-V1 covers FileCenter attachment content only. It does not migrate existing files, chat attachments, avatars, document embedded images, temporary uploads, or `public/uploads` as a whole.
+V1 covers registered persistent namespaces such as FileCenter content, chat attachments, avatars, report attachments, task content, assistant files, and published desktop artifacts. `uploads/tmp/` and `uploads/desktop-draft/` are local working directories and are never migrated to S3.
 
 ## Operations
 
-Keep the Warehouse credential scoped to `/services/project` with read, create, update, and delete permissions. Do not delete `public/uploads/file/` directly: it is still required as the compatibility cache and for historical local attachments.
+Keep the Warehouse credential scoped to `/services/project` with read, create, update, and delete permissions. In S3 mode, treat the Warehouse bucket and prefix as the source of truth; do not treat `public/uploads` as a persistent backup.
+
+Versioned production releases must share `public/uploads` across versions. Set `YEYING_SHARED_DIR=/opt/deploy/shared/project` when running `scripts/install.sh`; the installer links `.env`, `storage` and `public/uploads` into that directory.
+
+## Historical Data Migration
+
+Changing `FILE_STORAGE_DISK` to `s3` must be an operational switch, not an ongoing mixed mode. Keep `FILE_STORAGE_DISK=local` while copying every registered persistent namespace to S3, verify the manifest, stop writes, copy the final delta, then switch to `s3` and restart LaravelS.
+
+For production operations, use the step-by-step runbook in `docs/storage-s3-migration-runbook.md`.
+
+Inspect the planned object copy first:
+
+```bash
+./cmd artisan persistent-storage:migrate-s3
+```
+
+Run the migration with an explicit manifest path after reviewing the dry run:
+
+```bash
+./cmd artisan persistent-storage:migrate-s3 --execute --manifest=storage/app/persistent-storage-migration/manifest.jsonl
+```
+
+The command scans only registered persistent namespaces, skips local temporary directories such as `uploads/tmp/` and `uploads/desktop-draft/`, uploads each local object to S3, reads it back, and writes a JSONL manifest containing key, byte size and SHA-256. Use `--namespace=uploads/file/` for a staged namespace rollout or `--limit=100` for a small verification batch.
+
+After the first migration pass, stop persistent writes, rerun the same command to copy and verify the final delta, then change `FILE_STORAGE_DISK=s3`, clear config and restart LaravelS. Verify representative image, download, chat, task, desktop artifact and Office flows.
+
+Only after S3 mode is verified should local persistent files be removed, and only through the manifest-checked cleanup command:
+
+```bash
+./cmd artisan persistent-storage:cleanup-local storage/app/persistent-storage-migration/manifest.jsonl
+./cmd artisan persistent-storage:cleanup-local storage/app/persistent-storage-migration/manifest.jsonl --execute
+```
+
+Cleanup requires `FILE_STORAGE_DISK=s3`, rechecks that each local file still matches the manifest, re-reads the S3 object and compares size/SHA-256, then deletes only the matching local file. It never deletes `uploads/tmp/` or files not listed in the manifest.
+
+`file-storage:migrate-s3` is retained only as a historical FileCenter compatibility command. New storage migrations should use `persistent-storage:migrate-s3`.

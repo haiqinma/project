@@ -30,7 +30,7 @@ use App\Observers\UserTagRecognitionObserver;
 use App\Observers\WebSocketDialogMsgObserver;
 use App\Observers\WebSocketDialogObserver;
 use App\Observers\WebSocketDialogUserObserver;
-use App\Services\FileStorage;
+use App\Services\PersistentStorage;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -58,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        FileStorage::validateConfiguration();
+        PersistentStorage::validateConfiguration();
 
         \Illuminate\Database\Query\Builder::macro('rawSql', function(){
             return array_reduce($this->getBindings(), function($sql, $binding){

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\WebSocketDialogMsg;
 use App\Module\Base;
 use App\Module\Doo;
+use App\Services\PersistentStorage;
 use App\Tasks\PushTask;
 use Carbon\Carbon;
 use Hhxsv5\LaravelS\Swoole\Task\Task;
@@ -255,12 +256,17 @@ class ReportController extends AbstractController
             $content = $input["content"];
             preg_match_all("/<img\s+src=\"data:image\/(png|jpg|jpeg|webp);base64,(.*?)\"/s", $content, $matchs);
             foreach ($matchs[2] as $key => $text) {
-                $tmpPath = "uploads/report/" . Carbon::parse($report->created_at)->format("Ym") . "/" . $report->id . "/attached/";
-                Base::makeDir(public_path($tmpPath));
-                $tmpPath .= md5($text) . "." . $matchs[1][$key];
-                if (Base::saveContentImage(public_path($tmpPath), base64_decode($text))) {
-                    $paramet = getimagesize(public_path($tmpPath));
-                    $content = str_replace($matchs[0][$key], '<img src="' . Base::fillUrl($tmpPath) . '" original-width="' . $paramet[0] . '" original-height="' . $paramet[1] . '"', $content);
+                $tmpPath = storage_path('app/tmp/report-content/' . bin2hex(random_bytes(16)));
+                $objectKey = "uploads/report/" . Carbon::parse($report->created_at)->format("Ym") . "/" . $report->id . "/attached/" . md5($text) . "." . $matchs[1][$key];
+                Base::makeDir(dirname($tmpPath));
+                try {
+                    if (Base::saveContentImage($tmpPath, base64_decode($text))) {
+                        $paramet = getimagesize($tmpPath);
+                        PersistentStorage::putFile($objectKey, $tmpPath);
+                        $content = str_replace($matchs[0][$key], '<img src="' . Base::fillUrl($objectKey) . '" original-width="' . $paramet[0] . '" original-height="' . $paramet[1] . '"', $content);
+                    }
+                } finally {
+                    @unlink($tmpPath);
                 }
             }
             $report->content = htmlspecialchars($content);

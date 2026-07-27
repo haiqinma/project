@@ -28,6 +28,7 @@ use App\Models\AbstractModel;
 use App\Models\WebSocketDialog;
 use App\Models\WebSocketDialogMsg;
 use App\Models\WebSocketDialogUser;
+use App\Services\PersistentStorage;
 use App\Models\WebSocketDialogConfig;
 use App\Models\WebSocketDialogMsgRead;
 use App\Models\WebSocketDialogMsgTodo;
@@ -1080,12 +1081,10 @@ class DialogController extends AbstractController
             }
             if ($reallen > 5000) {
                 // 内容过长转成文件发送
-                $path = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/";
-                Base::makeDir(public_path($path));
-                $path = $path . md5($text) . ".htm";
+                $path = "uploads/chat/" . date("Ym") . "/" . $dialog_id . "/" . md5($text) . ".htm";
+                PersistentStorage::putContent($path, $text);
+                $size = strlen($text);
                 $file = public_path($path);
-                file_put_contents($file, $text);
-                $size = filesize(public_path($path));
                 if (empty($size)) {
                     return Base::retError('消息发送保存失败');
                 }

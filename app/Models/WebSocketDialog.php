@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Exceptions\ApiException;
 use App\Module\Base;
 use App\Module\Doo;
+use App\Services\PersistentStorage;
 use App\Tasks\PushTask;
 use Cache;
 use Carbon\Carbon;
@@ -1241,13 +1242,43 @@ class WebSocketDialog extends AbstractModel
      */
     private static function copyFileDataTo(array $first, string $path): array
     {
-        Base::makeDir(public_path($path));
-        $target = public_path($path) . basename($first['file']);
-        copy($first['file'], $target);
+        $sourceKey = $first['path'];
+        [$source] = PersistentStorage::readableLocalPath($sourceKey);
+        $targetKey = $path . basename($sourceKey);
+        PersistentStorage::putFile($targetKey, $source);
+        if (PersistentStorage::usesS3()) {
+            @unlink($source);
+        }
+
         $copy = $first;
-        $copy['file'] = $target;
-        $copy['path'] = $path . basename($first['file']);
+        $copy['file'] = public_path($targetKey);
+        $copy['path'] = $targetKey;
         $copy['url'] = Base::fillUrl($copy['path']);
+        $thumbKey = self::relativeUploadPath($first['thumb'] ?? '');
+        if ($thumbKey && $thumbKey !== $sourceKey && PersistentStorage::isPersistentKey($thumbKey)) {
+            [$thumbSource] = PersistentStorage::readableLocalPath($thumbKey);
+            $targetThumbKey = $path . basename($thumbKey);
+            PersistentStorage::putFile($targetThumbKey, $thumbSource);
+            if (PersistentStorage::usesS3()) {
+                @unlink($thumbSource);
+            }
+            $copy['thumb'] = Base::fillUrl($targetThumbKey);
+        }
         return $copy;
+    }
+
+    private static function relativeUploadPath(string $path): string
+    {
+        if ($path === '') {
+            return '';
+        }
+        if (str_starts_with($path, '{{RemoteURL}}')) {
+            return ltrim(substr($path, strlen('{{RemoteURL}}')), '/');
+        }
+        $parsed = parse_url($path);
+        if (isset($parsed['scheme'], $parsed['host'])) {
+            return ltrim($parsed['path'] ?? '', '/');
+        }
+        return ltrim($path, '/');
     }
 }

@@ -5,6 +5,7 @@ namespace App\Ldap;
 use App\Exceptions\ApiException;
 use App\Models\User;
 use App\Module\Base;
+use App\Services\PersistentStorage;
 use App\Services\RequestContext;
 use LdapRecord\Configuration\ConfigurationException;
 use LdapRecord\Container;
@@ -216,9 +217,15 @@ class LdapUser extends Model
             if ($userimg) {
                 $path = "uploads/user/ldap/";
                 $file = "{$path}{$user->userid}.jpeg";
-                Base::makeDir(public_path($path));
-                if (Base::saveContentImage(public_path($file), $userimg)) {
-                    $user->userimg = $file;
+                $temporary = storage_path('app/tmp/ldap-user/' . bin2hex(random_bytes(16)));
+                Base::makeDir(dirname($temporary));
+                try {
+                    if (Base::saveContentImage($temporary, $userimg)) {
+                        PersistentStorage::putFile($file, $temporary);
+                        $user->userimg = $file;
+                    }
+                } finally {
+                    @unlink($temporary);
                 }
             }
             $user->nickname = $row->getDisplayName();
@@ -249,9 +256,9 @@ class LdapUser extends Model
                 return;
             }
             try {
-                $userimg = public_path($user->getRawOriginal('userimg'));
-                if (file_exists($userimg)) {
-                    $userimg = file_get_contents($userimg);
+                $userimgPath = $user->getRawOriginal('userimg');
+                if ($userimgPath && PersistentStorage::isPersistentKey($userimgPath) && PersistentStorage::exists($userimgPath)) {
+                    $userimg = PersistentStorage::getContent($userimgPath);
                 } else {
                     $userimg = '';
                 }

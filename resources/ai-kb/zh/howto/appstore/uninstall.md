@@ -32,18 +32,18 @@ last_verified: v1.7.90
 1. 进入应用商店，定位到已安装的插件
 2. 点击「卸载」按钮
 3. 确认弹窗：通常会提示「卸载后相关数据如何处理」
-4. 等待 AppStore 微服务停容器、改 `config.yml` 状态为非 `installed`
+4. 等待 Runtime Agent 停容器并移除本地安装状态
 5. 刷新「应用」页，对应菜单消失
 
 ## 卸载做了什么
-- 在 `docker/appstore/config/{appId}/config.yml` 更新 `status` 字段（非 `installed`）
-- 调 `docker compose down` 停掉对应容器
+- 删除 `docker/appstore/config/{appId}/` 的安装状态和反代配置
+- 调 `docker compose down --remove-orphans` 停掉对应容器
 - 触发主程序缓存失效：`RequestContext::save('app_installed_xxx', false)`
 - 之后所有对该插件的后端调用会被 `Apps::isInstalledThrow()` 拦截，抛 ApiException
 
 ## 卸载会影响的数据
 取决于插件实现：
-- 多数官方插件停容器但保留 `docker/appstore/apps/{appId}/data/` 数据目录
+- Runtime Agent 不带 `--volumes`，因此命名卷数据默认保留
 - 重新安装通常能恢复数据
 - 若要彻底删数据，需要手动到服务器删 `data/` 目录（不可逆，做之前先备份）
 

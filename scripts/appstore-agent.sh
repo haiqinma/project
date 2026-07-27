@@ -3,8 +3,13 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="$root_dir/.env"
-[[ "${1:-}" == "--dry-run" && $# -eq 1 ]] || { echo "Usage: $(basename "$0") --dry-run" >&2; exit 2; }
+mode="${1:---once}"
+[[ "$mode" == "--once" || "$mode" == "--dry-run" ]] || { echo "Usage: $(basename "$0") [--once|--dry-run]" >&2; exit 2; }
 [[ -f "$env_file" ]] || { echo "Missing $env_file" >&2; exit 1; }
+command -v php >/dev/null || { echo "Missing php command." >&2; exit 1; }
+command -v curl >/dev/null || { echo "Missing curl command." >&2; exit 1; }
+command -v docker >/dev/null || { echo "Missing docker command." >&2; exit 1; }
+docker compose version >/dev/null
 
 env_value() { sed -n "s/^$1=//p" "$env_file" | head -n 1 | sed -e 's/^['\''"]//' -e 's/['\''"]$//'; }
 appstore_url="$(env_value APPSTORE_INTERNAL_URL)"; instance_id="$(env_value APPSTORE_INSTANCE_ID)"
@@ -19,26 +24,181 @@ request() {
   [[ -n "$body" ]] && args+=(-H "Content-Type: application/json" --data "$body")
   curl "${args[@]}"
 }
-verify_release() {
-  php -r '
-    $p=json_decode(file_get_contents($argv[1]),true);if(($p["code"]??0)!==200||!is_array($p["data"]??null))exit(1);$d=$p["data"];if(($d["release_digest"]??"")!==$argv[2]||!is_array($d["files"]??null))exit(1);$f=$d["files"];
-    foreach(["application.json","runtime.json","config.schema.json","permissions.json","compose.yaml","checksums.json","signature.json"] as $r)if(!array_key_exists($r,$f))exit(1);
-    $c=json_decode($f["checksums.json"],true);if(!is_array($c))exit(1);foreach($c as $path=>$sum){if(str_contains($path,"..")||str_starts_with($path,"/")||!isset($f[$path])||!is_string($sum)||!hash_equals($sum,hash("sha256",$f[$path])))exit(1);}
-    $r=json_decode($f["runtime.json"],true);if(!is_array($r)||!preg_match("/^[^\\s]+@sha256:[a-f0-9]{64}$/",(string)($r["image"]??"")))exit(1);echo json_encode($r["dependencies"]??[],JSON_UNESCAPED_SLASHES);
-  ' "$1" "$2"
+report_status() {
+  local status="$1" result="${2:-{}}" response
+  response="$(request POST "/api/v1/runtime/tasks/$task_id/report" "$(php -r 'echo json_encode(["revision"=>(int)$argv[1],"status"=>$argv[2],"result"=>json_decode($argv[3],true)?:new stdClass]);' "$revision" "$status" "$result")")"
+  revision="$(printf '%s' "$response" | json_path data.revision)"
+  task_status="$status"
 }
-tcp_check() { php -r '$s=@fsockopen($argv[1],(int)$argv[2],$e,$m,3);if(!$s)exit(1);fclose($s);' "$2" "$3" || { echo "Dependency unavailable: $1 ($2:$3)" >&2; return 1; }; echo "Dependency ready: $1 ($2:$3)"; }
+heartbeat() {
+  local response
+  response="$(request POST "/api/v1/runtime/tasks/$task_id/heartbeat" "{\"revision\":$revision}")"
+  revision="$(printf '%s' "$response" | json_path data.revision)"
+}
+
+verify_and_extract_release() {
+  local source="$1" expected="$2" destination="$3"
+  php -r '
+    $payload=json_decode(file_get_contents($argv[1]),true);if(($payload["code"]??0)!==200||!is_array($payload["data"]??null))exit(1);$data=$payload["data"];
+    if(($data["release_digest"]??"")!==$argv[2]||!is_array($data["files"]??null))exit(1);$files=$data["files"];
+    foreach(["application.json","runtime.json","config.schema.json","permissions.json","compose.yaml","checksums.json","signature.json"] as $required)if(!array_key_exists($required,$files))exit(1);
+    $checksums=json_decode($files["checksums.json"],true);if(!is_array($checksums))exit(1);
+    foreach($checksums as $path=>$sum){if(str_contains($path,"..")||str_starts_with($path,"/")||str_contains($path,"\\")||!isset($files[$path])||!is_string($sum)||!hash_equals($sum,hash("sha256",$files[$path])))exit(1);}
+    $runtime=json_decode($files["runtime.json"],true);if(!is_array($runtime)||!preg_match("/^[^\\s]+@sha256:[a-f0-9]{64}$/",(string)($runtime["image"]??"")))exit(1);
+    if(!is_dir($argv[3])&&!mkdir($argv[3],0755,true))exit(1);
+    foreach($files as $path=>$content){if(str_contains($path,"..")||str_starts_with($path,"/")||str_contains($path,"\\"))exit(1);$target=$argv[3]."/".$path;$dir=dirname($target);if(!is_dir($dir)&&!mkdir($dir,0755,true))exit(1);if(file_put_contents($target,$content)===false)exit(1);}
+  ' "$source" "$expected" "$destination"
+}
+
+runtime_value() { php -r '$v=json_decode(file_get_contents($argv[1]),true);foreach(explode(".",$argv[2]) as $k){if(!is_array($v)||!array_key_exists($k,$v))exit(1);$v=$v[$k];}echo is_bool($v)?($v?"true":"false"):$v;' "$release_dir/runtime.json" "$1"; }
+write_runtime_env() {
+  php -r '
+    $runtime=json_decode(file_get_contents($argv[1]),true);$source=[];foreach(file($argv[2],FILE_IGNORE_NEW_LINES)?:[] as $line){if($line===""||$line[0]==="#"||!str_contains($line,"="))continue;[$key,$value]=explode("=",$line,2);$source[trim($key)]=trim($value," \t\n\r\0\x0B\"\047");}
+    $output=[];foreach(($runtime["environment"]??[]) as $item){$value=$source[$item["from_env"]]??"";if(($item["required"]??false)&&$value===""){fwrite(STDERR,"Missing required Project env: ".$item["from_env"].PHP_EOL);exit(1);}$output[]=$item["name"]."=".str_replace(["\\","\n","\r"],["\\\\","\\n",""],$value);}
+    if(file_put_contents($argv[3].".tmp",implode(PHP_EOL,$output).PHP_EOL)===false||!rename($argv[3].".tmp",$argv[3]))exit(1);chmod($argv[3],0600);
+  ' "$release_dir/runtime.json" "$env_file" "$release_dir/runtime.env"
+}
+validate_compose() {
+  local rendered="$release_dir/compose.rendered.json"
+  docker compose --env-file "$release_dir/runtime.env" -p "$compose_project" -f "$release_dir/compose.yaml" config --format json >"$rendered"
+  php -r '
+    $compose=json_decode(file_get_contents($argv[1]),true);$runtime=json_decode(file_get_contents($argv[2]),true);if(!is_array($compose)||!is_array($runtime))exit(1);
+    $name=$runtime["service"]["name"]??"";$services=$compose["services"]??[];if(count($services)!==1||!isset($services[$name]))exit(1);$service=$services[$name];
+    if(($service["image"]??"")!==($runtime["image"]??""))exit(1);foreach(["privileged","devices","container_name","pid","network_mode"] as $key)if(!empty($service[$key]))exit(1);
+    foreach(($service["volumes"]??[]) as $volume)if(($volume["type"]??"")!=="volume")exit(1);
+    $host=(int)($runtime["service"]["host_port"]??0);$container=(int)($runtime["service"]["container_port"]??0);$matched=false;
+    foreach(($service["ports"]??[]) as $port){if((int)($port["published"]??0)===$host&&(int)($port["target"]??0)===$container&&in_array(($port["host_ip"]??""),["127.0.0.1","::1"],true))$matched=true;}
+    if(!$matched)exit(1);
+  ' "$rendered" "$release_dir/runtime.json" || { echo "Rendered Compose violates Runtime Agent policy." >&2; return 1; }
+}
+check_dependencies() {
+  php -r '$r=json_decode(file_get_contents($argv[1]),true);foreach(($r["dependencies"]??[]) as $d)if(!empty($d["required"]))echo $d["capability"].PHP_EOL;' "$release_dir/runtime.json" | while IFS= read -r capability; do
+    case "$capability" in
+      mysql) tcp_check mysql "$(env_value DB_HOST)" "$(env_value DB_PORT)" ;;
+      redis) tcp_check redis "$(env_value REDIS_HOST)" "$(env_value REDIS_PORT)" ;;
+      manticore) tcp_check manticore "$(env_value SEARCH_HOST)" "$(env_value SEARCH_PORT)" ;;
+      project-api) local url host port; url="$(env_value APP_URL)"; host="$(printf '%s' "$url"|sed -E 's#^[a-z]+://##;s#/.*$##;s/:.*$//')"; port="$(printf '%s' "$url"|sed -nE 's#^[a-z]+://[^/:]+:([0-9]+).*#\1#p')"; tcp_check project-api "$host" "${port:-$(env_value LARAVELS_LISTEN_PORT)}" ;;
+      object-storage) [[ -n "$(env_value S3_ENDPOINT)" ]] || { echo "Missing S3_ENDPOINT" >&2; return 1; } ;;
+      *) echo "Unsupported declared dependency: $capability" >&2; return 1 ;;
+    esac
+  done
+}
+tcp_check() { php -r '$s=@fsockopen($argv[1],(int)$argv[2],$e,$m,3);if(!$s)exit(1);fclose($s);' "$2" "$3" || { echo "Dependency unavailable: $1 ($2:$3)" >&2; return 1; }; }
+health_check() {
+  local protocol path timeout codes deadline code
+  protocol="$(runtime_value healthcheck.protocol)"; path="$(runtime_value healthcheck.path)"; timeout="$(runtime_value healthcheck.timeout_seconds)"
+  codes="$(php -r '$r=json_decode(file_get_contents($argv[1]),true);echo implode(",",$r["healthcheck"]["success_codes"]??[200]);' "$release_dir/runtime.json")"
+  deadline=$((SECONDS + timeout))
+  while (( SECONDS < deadline )); do
+    code="$(curl -ksS -o /dev/null -w '%{http_code}' --max-time 5 "$protocol://127.0.0.1:$host_port$path" || true)"
+    [[ ",$codes," == *",$code,"* ]] && return 0
+    heartbeat || true
+    sleep 2
+  done
+  return 1
+}
+write_local_state() {
+  local status="$1"
+  php -r '
+    require $argv[1]."/vendor/autoload.php";$application=json_decode(file_get_contents($argv[2]."/application.json"),true);$entries=$application["spec"]["entries"]??[];$menus=[];
+    foreach($entries as $entry)$menus[]=["key"=>$entry["id"]??"","location"=>$entry["location"]??"application","label"=>$entry["label"]??[],"url"=>ltrim($entry["path"]??"","/"),"url_type"=>$entry["render"]??"iframe","visible_to"=>$entry["visibility"]??"all"];
+    $config=["status"=>$argv[5],"install_version"=>$argv[3],"release_digest"=>$argv[4],"menu_items"=>$menus];$dir=$argv[1]."/docker/appstore/config/".$application["metadata"]["id"];
+    if(!is_dir($dir)&&!mkdir($dir,0755,true))exit(1);$target=$dir."/config.yml";file_put_contents($target.".tmp",Symfony\Component\Yaml\Yaml::dump($config,4,2));if(!rename($target.".tmp",$target))exit(1);
+    $stateDir=$argv[1]."/docker/appstore/runtime/".$application["metadata"]["id"];if(!is_dir($stateDir)&&!mkdir($stateDir,0755,true))exit(1);$state=["app_id"=>$application["metadata"]["id"],"version"=>$argv[3],"release_digest"=>$argv[4],"release_dir"=>$argv[2],"updated_at"=>gmdate(DATE_ATOM)];file_put_contents($stateDir."/state.json.tmp",json_encode($state,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));if(!rename($stateDir."/state.json.tmp",$stateDir."/state.json"))exit(1);
+  ' "$root_dir" "$release_dir" "$version" "$release_digest" "$status"
+}
+load_state_value() { php -r '$s=json_decode(@file_get_contents($argv[1]),true);$v=$s[$argv[2]]??"";if($v!=="")echo $v;' "$state_file" "$1"; }
+write_proxy_config() {
+  local route_prefix
+  route_prefix="$(runtime_value service.route_prefix)"
+  [[ "$route_prefix" == "/apps/$app_id/" ]] || { echo "Invalid runtime route prefix." >&2; return 1; }
+  mkdir -p "$root_dir/docker/appstore/config/$app_id"
+  cat >"$root_dir/docker/appstore/config/$app_id/nginx.conf.tmp" <<EOF
+location $route_prefix {
+    proxy_pass http://127.0.0.1:$host_port/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+}
+EOF
+  mv "$root_dir/docker/appstore/config/$app_id/nginx.conf.tmp" "$root_dir/docker/appstore/config/$app_id/nginx.conf"
+}
+reload_nginx() { command -v nginx >/dev/null && nginx -t && nginx -s reload; }
+remove_local_state() { rm -f "$state_file"; rm -rf "$root_dir/docker/appstore/config/$app_id"; }
 
 task_response="$(request POST /api/v1/runtime/tasks/claim)"; task_id="$(printf '%s' "$task_response" | json_path data.task_id || true)"
 [[ -n "$task_id" ]] || { echo "No pending AppStore runtime task."; exit 0; }
 revision="$(printf '%s' "$task_response" | json_path data.revision)"; app_id="$(printf '%s' "$task_response" | json_path data.app_id)"
-version="$(printf '%s' "$task_response" | json_path data.target_version)"; release_digest="$(printf '%s' "$task_response" | json_path data.release_digest)"; claimed=1
-return_task() { [[ "${claimed:-0}" == 1 ]] || return 0; request POST "/api/v1/runtime/tasks/$task_id/release" "{\"revision\":$revision}" >/dev/null || true; claimed=0; }
-release_file="$(mktemp)"; trap 'rm -f "$release_file"; return_task' EXIT
-request GET "/api/v1/runtime/releases/$app_id/$version" >"$release_file"
-dependencies="$(verify_release "$release_file" "$release_digest")" || { echo "Release verification failed for $app_id@$version." >&2; exit 1; }
+operation="$(printf '%s' "$task_response" | json_path data.operation)"; version="$(printf '%s' "$task_response" | json_path data.target_version)"; release_digest="$(printf '%s' "$task_response" | json_path data.release_digest)"
+[[ "$app_id" =~ ^[a-z][a-z0-9-]{1,63}$ && "$version" =~ ^[0-9A-Za-z.-]+$ && "$release_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid runtime task identity." >&2; exit 1; }
+[[ "$operation" == "install" || "$operation" == "upgrade" || "$operation" == "uninstall" ]] || { echo "Invalid runtime operation." >&2; exit 1; }
+compose_project="yeying-app-$app_id"; state_file="$root_dir/docker/appstore/runtime/$app_id/state.json"; previous_release_dir="$(load_state_value release_dir)"; previous_version="$(load_state_value version)"; previous_digest="$(load_state_value release_digest)"
+claimed=1; task_status=claimed; release_response="$(mktemp)"
+return_task() { [[ "$claimed" == 1 && "$task_status" == claimed ]] || return 0; request POST "/api/v1/runtime/tasks/$task_id/release" "{\"revision\":$revision}" >/dev/null || true; }
+trap 'rm -f "$release_response"; return_task' EXIT
 
-db_host="$(env_value DB_HOST)"; db_port="$(env_value DB_PORT)"; redis_host="$(env_value REDIS_HOST)"; redis_port="$(env_value REDIS_PORT)"; search_host="$(env_value SEARCH_HOST)"; search_port="$(env_value SEARCH_PORT)"
-app_url="$(env_value APP_URL)"; project_host="$(printf '%s' "$app_url" | sed -E 's#^[a-z]+://##;s#/.*$##;s/:.*$//')"; project_port="$(printf '%s' "$app_url" | sed -nE 's#^[a-z]+://[^/:]+:([0-9]+).*#\1#p')"; project_port="${project_port:-$(env_value LARAVELS_LISTEN_PORT)}"
-while IFS= read -r capability; do case "$capability" in mysql) tcp_check mysql "$db_host" "${db_port:-3306}";; redis) tcp_check redis "$redis_host" "${redis_port:-6379}";; manticore) tcp_check manticore "$search_host" "${search_port:-9306}";; project-api) tcp_check project-api "$project_host" "${project_port:-2222}";; object-storage) echo "Dependency declared: object-storage (not probed in dry-run)";; *) echo "Unsupported declared dependency: $capability" >&2; exit 1;; esac; done < <(printf '%s' "$dependencies" | php -r '$a=json_decode(stream_get_contents(STDIN),true);foreach((array)$a as $i)if(!empty($i["required"]))echo $i["capability"].PHP_EOL;')
-echo "Dry-run passed for $app_id@$version ($release_digest). Task returned to pending; no container or configuration was changed."
+if [[ "$operation" != "uninstall" ]]; then
+  release_dir="$root_dir/docker/appstore/releases/$app_id/$version/$release_digest"
+  request GET "/api/v1/runtime/releases/$app_id/$version" >"$release_response"
+  verify_and_extract_release "$release_response" "$release_digest" "$release_dir"
+  write_runtime_env
+  service_name="$(runtime_value service.name)"; host_port="$(runtime_value service.host_port)"
+  validate_compose; check_dependencies
+else
+  [[ -n "$previous_release_dir" && -f "$previous_release_dir/compose.yaml" ]] || { echo "Missing local release state for uninstall." >&2; exit 1; }
+  release_dir="$previous_release_dir"; write_runtime_env; service_name="$(runtime_value service.name)"; host_port="$(runtime_value service.host_port)"
+  validate_compose
+fi
+
+if [[ "$mode" == "--dry-run" ]]; then
+  echo "Dry-run passed for $operation $app_id@$version ($release_digest). Task returned to pending."
+  exit 0
+fi
+report_status applying '{}'; claimed=0
+
+if [[ "$operation" == "uninstall" ]]; then
+  [[ -n "$previous_release_dir" && -f "$previous_release_dir/compose.yaml" ]] || { report_status failed '{"code":"LOCAL_STATE_MISSING"}'; exit 1; }
+  release_dir="$previous_release_dir"; write_runtime_env; service_name="$(runtime_value service.name)"; host_port="$(runtime_value service.host_port)"
+  if docker compose --env-file "$release_dir/runtime.env" -p "$compose_project" -f "$release_dir/compose.yaml" down --remove-orphans; then
+    remove_local_state
+    reload_nginx
+    report_status succeeded "{\"release_digest\":\"$release_digest\",\"uninstalled\":true,\"data_preserved\":true}"
+    exit 0
+  fi
+  report_status failed "{\"release_digest\":\"$release_digest\",\"code\":\"UNINSTALL_FAILED\"}"
+  exit 1
+fi
+
+deploy_failed=0
+docker compose --env-file "$release_dir/runtime.env" -p "$compose_project" -f "$release_dir/compose.yaml" pull || deploy_failed=1
+heartbeat || true
+if [[ "$deploy_failed" == 0 ]]; then docker compose --env-file "$release_dir/runtime.env" -p "$compose_project" -f "$release_dir/compose.yaml" up -d --remove-orphans || deploy_failed=1; fi
+if [[ "$deploy_failed" == 0 ]]; then
+  report_status verifying '{}'
+  if health_check; then
+    if write_proxy_config && reload_nginx && write_local_state installed; then
+      report_status succeeded "{\"release_digest\":\"$release_digest\",\"healthcheck\":{\"ok\":true},\"previous_version\":\"$previous_version\"}"
+      exit 0
+    fi
+  fi
+fi
+
+if [[ -n "$previous_release_dir" && -f "$previous_release_dir/compose.yaml" ]]; then
+  report_status rolling_back "{\"release_digest\":\"$release_digest\"}"
+  release_dir="$previous_release_dir"; write_runtime_env; service_name="$(runtime_value service.name)"; host_port="$(runtime_value service.host_port)"
+  version="$previous_version"; release_digest="$previous_digest"
+  if validate_compose && docker compose --env-file "$release_dir/runtime.env" -p "$compose_project" -f "$release_dir/compose.yaml" up -d --remove-orphans && health_check && write_proxy_config && reload_nginx && write_local_state installed; then
+    report_status rolled_back "{\"release_digest\":\"$release_digest\",\"rollback\":{\"succeeded\":true}}"
+    exit 1
+  fi
+  report_status rollback_failed "{\"release_digest\":\"$release_digest\",\"rollback\":{\"succeeded\":false}}"
+  exit 1
+fi
+
+docker compose --env-file "$release_dir/runtime.env" -p "$compose_project" -f "$release_dir/compose.yaml" down --remove-orphans >/dev/null 2>&1 || true
+remove_local_state
+reload_nginx
+report_status failed "{\"release_digest\":\"$release_digest\",\"code\":\"DEPLOYMENT_FAILED\",\"rollback\":{\"attempted\":false}}"
+exit 1

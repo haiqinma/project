@@ -5,7 +5,7 @@ namespace App\Models;
 use Request;
 use App\Module\Apps;
 use App\Module\Base;
-use App\Services\FileStorage;
+use App\Services\PersistentStorage;
 use App\Tasks\PushTask;
 use App\Tasks\ManticoreSyncTask;
 use App\Observers\AbstractObserver;
@@ -442,7 +442,6 @@ class File extends AbstractModel
                 'type' => $type,
                 'ext' => $data['ext'],
                 'url' => $data['path'],
-                'storage' => FileStorage::store($data['path']),
             ];
             if (isset($data['width'])) {
                 $content['width'] = $data['width'];
@@ -852,7 +851,6 @@ class File extends AbstractModel
         if (in_array($item['ext'], self::imageExt) ) {
             $content = Base::json2array(FileContent::whereFid($item['id'])->orderByDesc('id')->value('content'));
             if ($content) {
-                FileStorage::ensureLocal($content);
                 $item['image_url'] = Base::fillUrl($content['url']);
                 $item['image_width'] = intval($content['width']);
                 $item['image_height'] = intval($content['height']);
@@ -904,7 +902,6 @@ class File extends AbstractModel
         $filePath = $data['path'];
         $fileSize = $data['size'];
         $fileExt = $data['ext'];
-        $publicPath = public_path($filePath);
         //
         switch ($fileExt) {
             case 'md':
@@ -912,7 +909,7 @@ class File extends AbstractModel
                 // 文本
                 $data['content'] = [
                     'type' => $fileExt,
-                    'content' => file_get_contents($publicPath) ?: 'Content deleted',
+                    'content' => PersistentStorage::getContent($filePath) ?: 'Content deleted',
                 ];
                 $data['file_mode'] = $fileExt;
                 break;
@@ -920,14 +917,14 @@ class File extends AbstractModel
             case 'drawio':
                 // 图表
                 $data['content'] = [
-                    'xml' => file_get_contents($publicPath)
+                    'xml' => PersistentStorage::getContent($filePath)
                 ];
                 $data['file_mode'] = $fileExt;
                 break;
 
             case 'mind':
                 // 思维导图
-                $data['content'] = Base::json2array(file_get_contents($publicPath));
+                $data['content'] = Base::json2array(PersistentStorage::getContent($filePath));
                 $data['file_mode'] = $fileExt;
                 break;
 
@@ -936,7 +933,7 @@ class File extends AbstractModel
                 {
                     // 文本预览，限制2M内的文件
                     $data['content'] = [
-                        'content' => file_get_contents($publicPath) ?: 'Content deleted',
+                        'content' => PersistentStorage::getContent($filePath) ?: 'Content deleted',
                     ];
                     $data['file_mode'] = 'code';
                 }
@@ -1060,39 +1057,45 @@ class File extends AbstractModel
      * @param object $file
      * @return void
      */
-    public static function addFileTreeToZip($zip, $file)
+    public static function addFileTreeToZip($zip, $file, array &$temporaryFiles = [])
     {
         if ($file->type != 'folder' && $file->name != '') {
             $content = FileContent::whereFid($file->id)->orderByDesc('id')->first();
             $content = Base::json2array($content?->content ?: []);
-            if (!empty($content['url'])) {
-                FileStorage::ensureLocal($content);
-            }
             $typeExtensions = [
                 'word' => 'docx',
                 'excel' => 'xlsx',
                 'ppt' => 'pptx',
             ];
             if (array_key_exists($file->type, $typeExtensions)) {
-                $filePath = empty($content) ? public_path('assets/office/empty.' . $typeExtensions[$file->type]) : public_path($content['url']);
+                if (empty($content)) {
+                    $filePath = public_path('assets/office/empty.' . $typeExtensions[$file->type]);
+                } else {
+                    [$filePath] = PersistentStorage::readableLocalPath($content['url']);
+                    if (PersistentStorage::usesS3()) {
+                        $temporaryFiles[] = $filePath;
+                    }
+                }
+            } elseif (!empty($content['url'])) {
+                [$filePath] = PersistentStorage::readableLocalPath($content['url']);
+                if (PersistentStorage::usesS3()) {
+                    $temporaryFiles[] = $filePath;
+                }
             }
             //
             $relativePath = $file->path . '.' . $file->ext;
-            if (file_exists($filePath)) {
+            if (!empty($filePath) && file_exists($filePath)) {
                 $zip->addFile($filePath, $relativePath);
             } else {
                 if (empty($content['url'])) {
                     $zip->addFromString($relativePath, $content['content']);
-                } else {
-                    $filePath = public_path($content['url']);
-                    $zip->addFile($filePath, $relativePath);
                 }
             }
         } else {
             if (isset($file->children)) {
                 foreach ($file->children as $childFile) {
                     try {
-                        self::addFileTreeToZip($zip, (object)$childFile);
+                        self::addFileTreeToZip($zip, (object)$childFile, $temporaryFiles);
                     } catch (\Exception $e) {
                     }
                 }
