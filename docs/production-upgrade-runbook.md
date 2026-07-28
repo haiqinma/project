@@ -11,6 +11,7 @@ cd /opt/deploy/project
 readlink -f /opt/deploy/project
 grep -E '^(APP_URL|FILE_STORAGE_DISK|S3_|DB_HOST|DB_PORT|REDIS_HOST|REDIS_PORT)' .env
 scripts/starter.sh status
+scripts/health-check.sh --level readiness --timeout 5
 ```
 
 Back up the database and the shared runtime data before replacing the release package. The package release must preserve the shared `.env`, `storage/` and `public/uploads` paths.
@@ -25,6 +26,8 @@ cd /opt/deploy/project
 ./cmd artisan migrate --force
 ./cmd artisan config:clear
 scripts/starter.sh restart
+scripts/health-check.sh --level readiness --timeout 5 --retries 12 --interval 5
+scripts/health-check.sh --level all --timeout 5
 ```
 
 Do not use `./cmd php restart` for the host-run LaravelS deployment. The production application process is managed by `scripts/starter.sh`.
@@ -59,6 +62,7 @@ After the restart, verify:
 3. A new attachment can be uploaded and reopened.
 4. `tail -n 100 storage/logs/laravel.log` shows no new storage or AppStore errors.
 5. `scripts/starter.sh status` reports the application running.
+6. `scripts/health-check.sh --level all` reports HTTP, database and Redis checks as passing.
 
 ## 5. Rollback
 

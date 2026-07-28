@@ -137,6 +137,23 @@ When LaravelS runs on the host, configure `DB_HOST`, `DB_PORT`, `REDIS_HOST` and
 
 Logs are written to `storage/logs/starter.log` and `storage/logs/laravel.log`.
 
+### 5. Health checks
+
+The default command checks readiness. Use `all` to include required dependencies or `json` for automation:
+
+```bash
+./scripts/health-check.sh
+./scripts/health-check.sh --level all
+./scripts/health-check.sh --level all --format json
+```
+
+- `liveness` checks the LaravelS PID when available and calls `/health`.
+- `readiness` verifies that LaravelS can serve application requests.
+- `dependency` runs a read-only `SELECT 1` against MySQL and `PING` against Redis.
+- `all` runs liveness, readiness and dependency checks in order.
+
+MySQL and Redis are required dependencies. The script never starts, stops or repairs shared middleware. `HEALTH_BASE_URL`, `HEALTH_TIMEOUT` and `HEALTH_RETRIES` can override the defaults.
+
 Use Caddy or Nginx in front of LaravelS for HTTPS, WebSocket forwarding, upload limits and static asset caching. Keep the application listener on `127.0.0.1` in production.
 
 ## Operations
