@@ -60,7 +60,7 @@ crontab 每日凌晨：
 1. 旧机：备份数据库 + 打包 uploads + 复制 `.env`
 2. 新机：`./cmd install` 部署
 3. 还原数据库 → 替换 `public/uploads/` → 抄 `.env` 关键项（APP_KEY、JWT_KEY 等）
-4. `./cmd php restart`
+4. `./scripts/starter.sh restart`
 
 ## 不要做
 - 不要只备份数据库不备份 uploads，附件丢了不可恢复

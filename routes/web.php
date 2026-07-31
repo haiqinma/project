@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ComplaintController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\AppsController;
+use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\StorageObjectController;
 
@@ -77,6 +78,9 @@ Route::prefix('api')->middleware(['webapi'])->group(function () {
     // 应用相关
     Route::any('apps/{method}',                         AppsController::class);
     Route::any('apps/{method}/{action}',                AppsController::class);
+    // 应用市场
+    Route::any('appstore/{method}',                     AppStoreController::class);
+    Route::any('appstore/{method}/{action}',            AppStoreController::class);
     // 测试
     Route::any('test/{method}',                         TestController::class);
     Route::any('test/{method}/{action}',                TestController::class);

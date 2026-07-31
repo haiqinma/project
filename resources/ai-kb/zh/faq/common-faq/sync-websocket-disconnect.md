@@ -20,7 +20,7 @@ negative:
   - WebSocket 断开时新消息和任务推送会丢失，重连后不会自动补拉历史推送
   - 没有手动「重连」按钮，前端按指数退避自动重连
   - 反向代理（nginx / 云防火墙）超时短于 60s 时会强制断开 WS
-last_verified: v1.7.90
+last_verified: v0.0.1
 ---
 
 # WebSocket 频繁断开 / 一直显示「连接中」
@@ -50,7 +50,7 @@ nginx / Apache / 云 LB 默认 60s 后空闲断开 WebSocket。需要：
 1. **刷新浏览器** → 重新建立连接
 2. 看右下角连接状态：等几秒看是否自动重连
 3. **管理员**：检查 nginx 反代配置（timeout、Upgrade 头）
-4. **管理员**：`./cmd php restart` 重启后端 Swoole 进程
+4. **管理员**：`./scripts/starter.sh restart` 重启后端 LaravelS/Swoole 进程
 5. 桌面端 / 移动端 App 杀进程重开
 
 ## 相关

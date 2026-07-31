@@ -4,6 +4,8 @@
 
 在 `.env` 设置 `APPSTORE_INTERNAL_URL`、`APPSTORE_INSTANCE_ID`、`APPSTORE_AGENT_ID` 和随机的 `APPSTORE_AGENT_TOKEN`。社区 Node 的 `appStoreAgent.instances` 必须为同一实例登记该 Token 的 SHA-256，不保存明文。
 
+Project 对前端暴露 `api/appstore/installed`、`api/appstore/install`、`api/appstore/upgrade` 和 `api/appstore/uninstall`。这些接口只做登录态 / 管理员校验，然后代理 Node AppStore 的 `/api/v1/internal/*` 接口；真正的安装、升级、卸载不会在 Web 请求内执行，而是由 Node 创建 Runtime Task，再由部署机 Agent 领取执行。
+
 dry-run 会领取一个任务，下载并校验 release digest、包内校验和与固定镜像 digest，再检查 release 声明的 Project API、MySQL、Redis、Manticore TCP 连通性。无论成功或失败都会归还任务为 `pending`，不会改变安装状态。
 
 `--once` 执行安装、升级或卸载任务。安装和升级只接受固定镜像 digest、回环地址端口、命名卷及受控环境变量；健康检查失败时会恢复上一份本地 release。卸载执行 `docker compose down --remove-orphans`，不删除命名卷，因此应用数据默认保留。

@@ -19,9 +19,9 @@ prerequisites:
   - 服务器能拉取新镜像
 negative:
   - 更新会触发容器重建，期间该插件功能短暂不可用
-  - 不支持回滚到旧版本（除非自行管理镜像）
+  - 不支持手动选择任意历史版本；失败时只自动恢复上一份已验证 release
   - 不支持自动升级（每次需要管理员手动确认）
-last_verified: v1.7.90
+last_verified: v0.0.1
 ---
 
 # 更新一个插件
@@ -34,8 +34,9 @@ last_verified: v1.7.90
 2. 点击插件 → 「更新」
 3. 阅读更新日志，确认无破坏性变更
 4. 点「确认更新」
-5. Runtime Agent 拉取固定 digest 镜像、启动新版本并做健康检查
-6. `config.yml` 的 `install_version` 更新
+5. Project 调用 Node AppStore 创建 `upgrade` Runtime Task
+6. Runtime Agent 拉取固定 digest 镜像、启动新版本并做健康检查
+7. 健康检查通过后，`config.yml` 的 `install_version` 更新
 
 ## 更新期间会发生什么
 - 该插件提供的接口短暂返回 502 / 不可用（几秒到一分钟）
@@ -43,7 +44,7 @@ last_verified: v1.7.90
 - 与该插件交互的 AI 工具、机器人会失败（前端通常会重试）
 
 ## 更新失败怎么办
-- 拉取或健康检查失败时，Agent 会自动恢复上一份已验证 release；仍失败再看 [[appstore.cannot-install.faq]] 的网络部分
+- 拉取、启动或健康检查失败时，Agent 会进入 `rolling_back` 并恢复上一份已验证 release；仍失败再看 [[appstore.cannot-install.faq]] 的网络部分
 - 容器起不来：服务器 `docker logs` 看日志
 - 状态卡在「更新中」：到 `docker/appstore/config/{appId}/config.yml` 检查状态字段
 - 必要时卸载重装

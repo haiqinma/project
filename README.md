@@ -137,6 +137,23 @@ When LaravelS runs on the host, configure `DB_HOST`, `DB_PORT`, `REDIS_HOST` and
 
 Logs are written to `storage/logs/starter.log` and `storage/logs/laravel.log`.
 
+### 5. Health checks
+
+The default command checks readiness. Use `all` to include required dependencies or `json` for automation:
+
+```bash
+./scripts/health-check.sh
+./scripts/health-check.sh --level all
+./scripts/health-check.sh --level all --format json
+```
+
+- `liveness` checks the LaravelS PID when available and calls `/health`.
+- `readiness` verifies that LaravelS can serve application requests.
+- `dependency` runs a read-only `SELECT 1` against MySQL and `PING` against Redis.
+- `all` runs liveness, readiness and dependency checks in order.
+
+MySQL and Redis are required dependencies. The script never starts, stops or repairs shared middleware. `HEALTH_BASE_URL`, `HEALTH_TIMEOUT` and `HEALTH_RETRIES` can override the defaults.
+
 Use Caddy or Nginx in front of LaravelS for HTTPS, WebSocket forwarding, upload limits and static asset caching. Keep the application listener on `127.0.0.1` in production.
 
 ## Operations
@@ -161,7 +178,7 @@ Use Caddy or Nginx in front of LaravelS for HTTPS, WebSocket forwarding, upload 
 
 If an administrator already exists, the command prints it and leaves passwords unchanged. If no administrator exists, it creates or repairs `admin@yeying.com`, prints a one-time initial password, and requires password change on first login.
 
-Back up MySQL, persistent uploads and production configuration before upgrades. See `docs/` for the deployment, backup and recovery details.
+Back up MySQL, persistent uploads and production configuration before upgrades. Follow `docs/production-upgrade-runbook.md` for the production upgrade sequence.
 
 For versioned releases behind a `project` symlink, keep runtime data outside the release directory. Run installation with the same shared directory for every version:
 

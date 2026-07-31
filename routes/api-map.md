@@ -2,7 +2,7 @@
 
 > 此文件由 `php artisan doc:api-map` 生成，勿手改。
 
-接口总数：312
+接口总数：316
 
 ## 路由规则
 
@@ -388,6 +388,15 @@ API 使用动态路由（见 `routes/web.php`），URL 段映射为控制器方�
 | api/apps/badge/set | badge__set() | post | 设置角标（应用密钥鉴权） |
 | api/apps/badge/clear | badge__clear() | post | 清除角标（当前用户 token 鉴权） |
 | api/apps/badge/list | badge__list() | get | 拉取自己全部角标 |
+
+## appstore（AppStoreController）
+
+| URL | 方法名 | HTTP | 说明 |
+| --- | --- | --- | --- |
+| api/appstore/installed | installed() | get | 获取已安装应用 |
+| api/appstore/install | install() | post | 安装应用 |
+| api/appstore/upgrade | upgrade() | post | 升级应用 |
+| api/appstore/uninstall | uninstall() | post | 卸载应用 |
 
 ## test（TestController）
 

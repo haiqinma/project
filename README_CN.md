@@ -255,7 +255,24 @@ sudo ./scripts/ubuntu-deps.sh --install
 ./scripts/install.sh
 ```
 
-### 7. 生产入口
+### 7. 健康检查
+
+默认执行就绪检查，也可以执行完整检查或输出 JSON：
+
+```bash
+./scripts/health-check.sh
+./scripts/health-check.sh --level all
+./scripts/health-check.sh --level all --format json
+```
+
+- `liveness`：检查 LaravelS PID（外部进程管理或本地模式没有 PID 文件时跳过）和 `/health`。
+- `readiness`：确认 LaravelS 已经可以响应应用请求。
+- `dependency`：对 MySQL 执行只读 `SELECT 1`，并对 Redis 执行 `PING`。
+- `all`：依次执行存活、就绪和依赖检查。
+
+MySQL 和 Redis 都是必需依赖，检查失败会返回 `FAIL`。脚本只读取当前配置并执行只读探针，不会启动、停止或修复任何中间件。可通过 `HEALTH_BASE_URL`、`HEALTH_TIMEOUT`、`HEALTH_RETRIES` 等环境变量覆盖默认值。
+
+### 8. 生产入口
 
 建议让 LaravelS 只监听 `127.0.0.1:2222`，前面使用 Caddy 或 Nginx 提供：
 
@@ -287,7 +304,7 @@ sudo ./scripts/ubuntu-deps.sh --install
 ./cmd ensure-admin
 ```
 
-生产升级前请先备份数据库和 `public/uploads`。升级、备份、systemd 自动启动和恢复流程详见 `docs/`。
+生产升级前请先备份数据库和持久文件。生产升级顺序按 `docs/production-upgrade-runbook.md` 执行；S3 迁移按 `docs/storage-s3-migration-runbook.md` 执行。
 
 ## License
 

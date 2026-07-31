@@ -68,7 +68,7 @@ last_verified: v0.0.1
 - 密码字段（`userPassword`）的 Hash 策略是否兼容
 
 ### 5. Swoole 协程导致连接被污染
-后端用 `LdapRecord` 的全局 `Container`，认证完会主动恢复成管理员绑定。如果出现「时而成功时而失败」，执行 `./cmd php restart` 重启容器。
+后端用 `LdapRecord` 的全局 `Container`，认证完会主动恢复成管理员绑定。如果出现「时而成功时而失败」，执行 `./scripts/starter.sh restart` 重启宿主机 LaravelS 进程。
 
 ## 怎么看 LDAP 详细错误
 后端把异常写入日志（`storage/logs/laravel.log` 或容器内 PHP error_log），过滤 `[LDAP]` 前缀即可看到 `auth fail / sync fail / update fail / delete fail` 等详细 message。

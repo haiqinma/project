@@ -86,10 +86,10 @@ Clear config and restart LaravelS:
 
 ```bash
 ./cmd artisan config:clear
-./cmd php restart
+./scripts/starter.sh restart
 ```
 
-If the deployment uses process supervision instead of `./cmd php restart`, restart the application process through that supervisor.
+If the deployment uses external process supervision, restart the application process through that supervisor instead of the bundled starter script.
 
 ## Phase 5: Verification
 

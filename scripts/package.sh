@@ -213,6 +213,7 @@ chmod 755 "$package_dir"
 chmod +x \
   "$package_dir/scripts/ubuntu-deps.sh" \
   "$package_dir/scripts/starter.sh" \
+  "$package_dir/scripts/health-check.sh" \
   "$package_dir/scripts/install.sh"
 
 tar -czf "$archive_path" -C "$stage_dir" "$package_name"
