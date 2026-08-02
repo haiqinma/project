@@ -1,6 +1,6 @@
 # YeYing 社区应用中心、AI Assistant 与 MCP 详细设计
 
-> 历史文档：本文记录早期把 Node 作为 AppStore 运行入口的设计，不再作为当前架构依据。当前权威边界见 `docs/agent-runtime-design.md`：Project 只消费 Agent Runtime，Agent 负责安装、升级、失败回滚和卸载，Node 只做社区发布目录与授权入口。
+> 历史文档：本文记录早期把 Node 作为 AppStore 运行入口的设计，不再作为当前架构依据。当前权威边界见 `docs/智能体运行时协议设计.md`：Project 只消费 Agent Runtime，Agent 负责安装、升级、失败回滚和卸载，Node 只做社区发布目录与授权入口。
 
 ## 1. 目标
 
@@ -91,10 +91,10 @@ YeYing 主项目已经包含 AI 相关的适配代码：
 - 钱包身份和 UCAN 权限
 - 社区应用门户
 
-现有项目位置：
+现有项目代码：
 
 ```text
-/Users/liuxin2/Workspace/opensource/node
+github.com/yeying-community/node
 ```
 
 现有技术栈：

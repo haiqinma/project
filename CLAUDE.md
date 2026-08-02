@@ -27,7 +27,7 @@ Laravel 13 (LaravelS/Swoole, PHP 8.4) + Vue 2 (Vite) + Electron。开源任务/�
 ## 代码检索地图（先查表，再 grep）
 
 - API URL ↔ 控制器方法对照：`routes/api-map.md`（生成式文件，勿手改）
-- 前端事件总线（mitt）收发对照：`docs/events-map.md`（`npm run events:map` 重新生成）
+- 前端事件总线（mitt）收发对照：`docs/前端事件总线映射.md`（`npm run events:map` 重新生成）
 - `$A` / `$L` 全局工具类型声明：`types/dootask-globals.d.ts`（新增 `$A` 方法须同步此文件）
 
 ## 架构增量规则（只约束新增代码，存量"动到哪迁到哪"）
