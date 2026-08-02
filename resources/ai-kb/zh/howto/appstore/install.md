@@ -33,14 +33,15 @@ last_verified: v0.0.1
 ## 操作步骤
 1. 进入应用商店，浏览插件列表（左侧分类：官方 / 社区）
 2. 点击想装的插件，看说明、版本号、作者、依赖资源
-3. 点「安装」按钮，Project 调用 Node AppStore 创建 Runtime Task
-4. 部署机 Agent 领取任务，校验 release、拉取固定 digest 镜像、启动容器并做健康检查
+3. 点「安装」按钮，Project 通过 AppStore 兼容入口调用 Agent Runtime 创建安装任务
+4. Agent 向 Node Registry 查询 release，校验签名和 digest，拉取固定 digest 镜像、启动容器并做健康检查
 5. 等待状态从「安装中」变成「已安装」（时间从十秒到数分钟，取决于镜像大小）
 6. 安装完成后到「应用」页刷新，对应入口出现
 
 ## 安装做了什么
-- Node AppStore 创建 `install` Runtime Task，并记录目标版本与 release digest
-- 部署机 Agent 只接受固定镜像 digest、受控环境变量、回环地址端口和命名卷
+- Agent Runtime 创建 `install` 任务，并记录目标版本、release digest 和执行状态
+- Agent 只接受固定镜像 digest、受控环境变量、回环地址端口和命名卷
+- Node 只提供社区发布目录、release artifact、签名和授权入口，不管理生产机进程
 - Agent 写入 `docker/appstore/config/{appId}/config.yml` 与受控 Nginx 反代配置
 - 部分插件会通过 menu_items 注册微应用入口到普通成员的「应用」页
 
