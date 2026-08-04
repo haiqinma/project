@@ -35,8 +35,22 @@ return [
     // Persistent upload backend. Set to s3 only after S3_* is configured and historical uploads are migrated.
     'file_storage_disk' => env('FILE_STORAGE_DISK', 'local'),
 
+    // Markdown PlantUML browser-accessible base URL. Keep empty to show PlantUML as code blocks.
+    // Recommended production value is a same-origin reverse proxy path, for example /plantuml.
+    // Direct plantuml/plantuml-server:jetty URLs should point to the server root, not /plantuml.
+    'plantuml_server_url' => env('PLANTUML_SERVER_URL', ''),
+
     // 在线授权：YeYing AppStore 授权中心地址（OnlineLicense；测试可指向开发环境）
     'online_license_appstore_url' => env('ONLINE_LICENSE_APPSTORE_URL', 'https://appstore.yeying.pub'),
+
+    // YeYing Passport / Node 登录中心。为空时登录二维码回退到旧的 Project 本地二维码。
+    'passport_node_url' => env('PASSPORT_NODE_URL', ''),
+
+    // 当前 Project 在 Node 中登记的应用 ID。
+    'passport_client_id' => env('PASSPORT_CLIENT_ID', ''),
+
+    // 通行证登录申请的授权范围。
+    'passport_scope' => env('PASSPORT_SCOPE', 'openid profile wallet'),
 
     // Agent Runtime 内网地址：Project 的 AppStore 兼容入口优先转发到 Agent，由 Agent 再访问 Node Registry。
     'agent_internal_url' => env('AGENT_INTERNAL_URL', env('APPSTORE_INTERNAL_URL', 'http://agent')),

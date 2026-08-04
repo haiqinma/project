@@ -12,6 +12,7 @@ const argv = process.argv;
 const basePath = argv.includes('electronBuild') ? './' : '/';
 const publicPath = argv.includes('electronBuild') ? 'electron/public' : 'public';
 const staticDir = {src: path.resolve(__dirname, 'resources/assets/statics/public'), dest: path.resolve(__dirname, publicPath)}
+const jsTarget = 'es2020';
 
 if (!argv.includes('fromcmd')) {
     execSync(`npx ${path.resolve(__dirname, 'cmd')} ${argv.includes("build") ? "build" : "dev"}`, {stdio: "inherit"});
@@ -124,6 +125,7 @@ export default defineConfig(({command, mode}) => {
             extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.vue']
         },
         build: {
+            target: jsTarget,
             manifest: true,
             outDir: publicPath,
             assetsDir: "js/build",
@@ -140,6 +142,11 @@ export default defineConfig(({command, mode}) => {
             },
             brotliSize: false,
             chunkSizeWarningLimit: 1500,
+        },
+        optimizeDeps: {
+            esbuildOptions: {
+                target: jsTarget,
+            },
         },
         plugins,
         css: {

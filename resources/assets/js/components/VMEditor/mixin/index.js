@@ -11,6 +11,17 @@ const vmeditorStyle = () => {
         .vmpreview-wrapper .vuepress-markdown-body:not(.custom) {
             padding: 1rem 1.5rem;
         }
+        .vmeditor-wrapper .plantuml-block,
+        .vmpreview-wrapper .plantuml-block {
+            margin: 16px 0;
+            overflow-x: auto;
+        }
+        .vmeditor-wrapper .plantuml-diagram,
+        .vmpreview-wrapper .plantuml-diagram {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
         @media screen {
             .v-md-pre-wrapper {
                 ${$A.dark.utils.reverseFilter()}

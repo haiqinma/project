@@ -28,7 +28,8 @@
             origin: window.location.origin + "/",
             homeUrl: null,
             apiUrl: null,
-            appstoreUrl: @json(config('dootask.appstore_entry_url'))
+            appstoreUrl: @json(config('dootask.appstore_entry_url')),
+            plantumlServerUrl: @json(config('dootask.plantuml_server_url'))
         };
     </script>
 </head>

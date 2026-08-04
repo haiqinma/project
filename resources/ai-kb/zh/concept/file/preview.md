@@ -28,11 +28,15 @@ last_verified: v0.0.1
 文件预览指在浏览器内不下载即可查看的能力。YeYing 不同文件类型走不同预览管线，依赖不同插件。
 
 ## 浏览器直接预览（无需插件）
-- **document**：内置在线文档（Markdown 渲染器）
+- **document**：内置在线文档（Markdown 渲染器），支持 Mermaid 代码块预览；配置内网 PlantUML Server 后支持 PlantUML 代码块预览
 - **txt / code**：纯文本与代码高亮
 - **picture**：jpg / png / webp / gif / bmp 直接渲染
 - **mind**：思维导图（需 minder 插件，但产品默认随包提供）
 - **drawio**：流程图（需 drawio 插件）
+
+## Markdown 图表
+- Mermaid：使用前端内置 Mermaid 渲染。
+- PlantUML：浏览器端不内置完整 PlantUML 引擎；管理员配置 `PLANTUML_SERVER_URL` 为同源内网反代路径（如 `/plantuml`）后，`plantuml` / `puml` 代码块渲染为 SVG。未配置时按普通代码块显示，系统不会自动请求公网 PlantUML 服务。
 
 ## 需安装插件预览
 - **word / excel / ppt**：内置类型，但实际渲染由 OnlyOffice 完成，需 office 插件
