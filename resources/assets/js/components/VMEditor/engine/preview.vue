@@ -80,11 +80,20 @@ export default {
     methods: {
         handleClick({target}) {
             if (target.nodeName === 'IMG') {
-                const list = [...this.$el.querySelectorAll('img').values()].map(img => img.src)
+                const list = [...this.$el.querySelectorAll('img').values()].map(img => {
+                    const src = img.currentSrc || img.src;
+                    if (img.classList.contains('plantuml-diagram')) {
+                        return {
+                            src,
+                            previewMode: 'original',
+                        }
+                    }
+                    return src;
+                })
                 if (list.length === 0) {
                     return
                 }
-                this.$store.dispatch("previewImage", {index: target.src, list})
+                this.$store.dispatch("previewImage", {index: target.currentSrc || target.src, list})
             }
         }
     }

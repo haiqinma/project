@@ -197,6 +197,7 @@ export default {
         }
     },
     mounted() {
+        this.applyPreferredMode();
         this.deviceSupportInstall();
         this.$refs.view.focus();
     },
@@ -213,8 +214,11 @@ export default {
         isLast() {
             return this.index === this.urlList.length - 1;
         },
+        currentItem() {
+            return this.urlList[this.index];
+        },
         currentImg() {
-            let item = this.urlList[this.index];
+            let item = this.currentItem;
             if ($A.isJson(item)) {
                 item = item.src;
             }
@@ -238,6 +242,7 @@ export default {
         index: {
             handler: function (val) {
                 this.reset();
+                this.applyPreferredMode();
                 this.onSwitch(val);
             }
         },
@@ -336,6 +341,11 @@ export default {
                 offsetY: 0,
                 enableTransition: false
             };
+        },
+        applyPreferredMode() {
+            this.mode = $A.isJson(this.currentItem) && this.currentItem.previewMode === 'original'
+                ? Mode.ORIGINAL
+                : Mode.CONTAIN;
         },
         toggleMode() {
             if (this.loading) return;
