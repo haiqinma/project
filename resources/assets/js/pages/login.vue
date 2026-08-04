@@ -21,7 +21,9 @@
 
                 <transition name="login-mode">
                     <div v-if="loginMode=='qrcode'" class="login-qrcode" @click="qrcodeRefresh">
-                        <VueQrcode :value="qrcodeUrl" :options="{width:200,margin:2}"></VueQrcode>
+                        <VueQrcode v-if="qrcodeUrl" :value="qrcodeUrl" :options="{width:200,margin:2}"></VueQrcode>
+                        <Loading v-else/>
+                        <div class="login-qrcode-status">{{qrcodeStatusText}}</div>
                     </div>
                 </transition>
                 <transition name="login-mode">
@@ -192,6 +194,10 @@ export default {
             languageName,
 
             qrcodeVal: '',
+            qrcodeUrlValue: '',
+            qrcodeSessionId: '',
+            qrcodeMode: 'legacy',
+            qrcodeStatusText: '',
             qrcodeTimer: null,
             qrcodeLoad: false,
 
@@ -265,13 +271,12 @@ export default {
         },
 
         welcomeTitle() {
-            return this.loginMode == 'qrcode' ? this.$L('扫码登录') : this.$L('夜莺项目管理')
+            return this.loginMode == 'qrcode' ? this.$L('通行证扫码登录') : this.$L('夜莺项目管理')
         },
 
         subTitle() {
-            const title = window.systemInfo.title || "夜莺";
             if (this.loginMode == 'qrcode') {
-                return this.$L('请使用(*)移动端扫描二维码。', title)
+                return this.$L('请使用手机相机或夜莺钱包扫码确认登录。')
             }
             if (this.loginType=='reg') {
                 return this.$L('输入您的信息以创建帐户。')
@@ -287,7 +292,10 @@ export default {
         },
 
         qrcodeUrl() {
-            return $A.mainUrl('login?qrcode=' + this.qrcodeVal)
+            if (this.qrcodeUrlValue) {
+                return this.qrcodeUrlValue
+            }
+            return this.qrcodeVal ? $A.mainUrl('login?qrcode=' + this.qrcodeVal) : ''
         },
     },
 
@@ -354,29 +362,89 @@ export default {
         },
 
         qrcodeRefresh() {
-            if (this.loginMode == 'qrcode') {
-                this.qrcodeVal = $A.randomString(32)
+            if (this.loginMode != 'qrcode') {
+                return;
             }
+            this.qrcodeVal = '';
+            this.qrcodeUrlValue = '';
+            this.qrcodeSessionId = '';
+            this.qrcodeMode = 'legacy';
+            this.qrcodeStatusText = this.$L('二维码生成中...');
+            this.$store.dispatch("call", {
+                url: 'passport/login/session',
+                data: {},
+            }).then(({data}) => {
+                this.qrcodeMode = 'passport';
+                this.qrcodeSessionId = data.session_id || '';
+                this.qrcodeUrlValue = data.qrcode_url || '';
+                this.qrcodeStatusText = this.$L('请使用手机相机或夜莺钱包扫码确认登录。');
+                if (!this.qrcodeSessionId || !this.qrcodeUrlValue) {
+                    this.useLegacyQrcode();
+                }
+            }).catch(({data}) => {
+                if (data?.code !== 'passport_not_configured') {
+                    this.qrcodeStatusText = this.$L('通行证服务不可用，已切换本地扫码登录。');
+                }
+                this.useLegacyQrcode();
+            });
+        },
+
+        useLegacyQrcode() {
+            this.qrcodeMode = 'legacy';
+            this.qrcodeSessionId = '';
+            this.qrcodeUrlValue = '';
+            this.qrcodeVal = $A.randomString(32);
+            this.qrcodeStatusText = this.$L('请使用已登录客户端扫码。');
         },
 
         qrcodeStatus() {
             if (this.routeName !== 'login' || this.loginMode != 'qrcode') {
                 return;
             }
-            if (this.qrcodeLoad) {
+            if (this.qrcodeLoad || (!this.qrcodeVal && !this.qrcodeSessionId)) {
                 return;
             }
             this.qrcodeLoad = true
-            //
-            this.$store.dispatch("call", {
-                url: 'users/login/qrcode?code=' + this.qrcodeVal,
-            }).then(({data}) => {
+            const request = this.qrcodeMode === 'passport'
+                ? {url: 'passport/login/status', data: {session_id: this.qrcodeSessionId}}
+                : {url: 'users/login/qrcode?code=' + this.qrcodeVal};
+            this.$store.dispatch("call", request).then(({data}) => {
+                if (this.qrcodeMode === 'passport') {
+                    this.handlePassportQrcodeStatus(data);
+                    return;
+                }
                 this.$store.dispatch("handleClearCache", data).then(this.goNext);
-            }).catch(_ => {
-                //
+            }).catch(({data, msg}) => {
+                if (this.qrcodeMode === 'passport' && ['expired', 'passport_wallet_unbound', 'wallet_email_required'].includes(data?.code)) {
+                    this.qrcodeSessionId = '';
+                    this.qrcodeStatusText = msg || this.$L('扫码登录失败，请刷新二维码。');
+                }
             }).finally(_ => {
                 this.qrcodeLoad = false
             });
+        },
+
+        handlePassportQrcodeStatus(data) {
+            const status = data?.status || 'pending';
+            if (status === 'approved' && data?.token) {
+                this.$store.dispatch("handleClearCache", data).then(this.goNext);
+                return;
+            }
+            if (status === 'scanned') {
+                this.qrcodeStatusText = this.$L('已扫码，请在手机上确认登录。');
+                return;
+            }
+            if (status === 'rejected') {
+                this.qrcodeSessionId = '';
+                this.qrcodeStatusText = this.$L('已拒绝登录，请刷新二维码。');
+                return;
+            }
+            if (status === 'expired') {
+                this.qrcodeSessionId = '';
+                this.qrcodeStatusText = this.$L('二维码已过期，请刷新。');
+                return;
+            }
+            this.qrcodeStatusText = this.$L('请使用手机相机或夜莺钱包扫码确认登录。');
         },
 
         forgotPassword() {

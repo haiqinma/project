@@ -55,6 +55,7 @@ dootask.lock
 package-lock.json
 
 # Laravel/Swoole specific
+run/
 laravels-timer-process.pid
 laravels.conf
 laravels.pid

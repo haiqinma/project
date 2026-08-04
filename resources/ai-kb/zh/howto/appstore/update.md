@@ -34,14 +34,14 @@ last_verified: v0.0.1
 2. 点击插件 → 「更新」
 3. 阅读更新日志，确认无破坏性变更
 4. 点「确认更新」
-5. Project 调用 Node AppStore 创建 `upgrade` Runtime Task
-6. Runtime Agent 拉取固定 digest 镜像、启动新版本并做健康检查
+5. Project 调用 Agent Runtime 创建 `upgrade` 任务
+6. Agent 从 Node Registry 查询 release，拉取固定 digest 镜像、启动新版本并做健康检查
 7. 健康检查通过后，`config.yml` 的 `install_version` 更新
 
 ## 更新期间会发生什么
 - 该插件提供的接口短暂返回 502 / 不可用（几秒到一分钟）
 - 微应用入口仍在「应用」页，但点开可能加载失败
-- 与该插件交互的 AI 工具、机器人会失败（前端通常会重试）
+- 与该插件交互的 AI 工具、智能体会失败（前端通常会重试）
 
 ## 更新失败怎么办
 - 拉取、启动或健康检查失败时，Agent 会进入 `rolling_back` 并恢复上一份已验证 release；仍失败再看 [[appstore.cannot-install.faq]] 的网络部分

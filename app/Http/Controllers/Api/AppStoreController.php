@@ -9,17 +9,17 @@ use GuzzleHttp\Exception\GuzzleException;
 use Request;
 
 /**
- * YeYing AppStore 接入代理。
+ * YeYing Agent Runtime 接入代理。
  *
- * Project 只负责认证、管理员校验和转发 Node AppStore internal API。
- * 实际安装、升级、卸载由 Node 生成 Runtime Task，再由部署机 Agent 执行。
+ * Project 只负责认证、管理员校验和转发 Agent internal API。
+ * appstore 路由名是历史兼容入口，实际安装、升级、卸载由 Agent Runtime 编排。
  */
 class AppStoreController extends AbstractController
 {
     /**
      * @api {get} api/appstore/installed 获取已安装应用
      *
-     * @apiDescription 代理 Node AppStore `GET /api/v1/internal/installed`。
+     * @apiDescription 代理 Agent Runtime `GET /api/v1/internal/installed`。
      * @apiVersion 1.0.0
      * @apiGroup appstore
      * @apiName installed
@@ -37,7 +37,7 @@ class AppStoreController extends AbstractController
     /**
      * @api {post} api/appstore/install 安装应用
      *
-     * @apiDescription 管理员代理 Node AppStore `POST /api/v1/internal/install`，返回 Runtime Task。
+     * @apiDescription 管理员代理 Agent Runtime `POST /api/v1/internal/install`，返回 Runtime Task。
      * @apiVersion 1.0.0
      * @apiGroup appstore
      * @apiName install
@@ -54,7 +54,7 @@ class AppStoreController extends AbstractController
     /**
      * @api {post} api/appstore/upgrade 升级应用
      *
-     * @apiDescription 管理员代理 Node AppStore `POST /api/v1/internal/upgrade`，返回 Runtime Task。
+     * @apiDescription 管理员代理 Agent Runtime `POST /api/v1/internal/upgrade`，返回 Runtime Task。
      * @apiVersion 1.0.0
      * @apiGroup appstore
      * @apiName upgrade
@@ -71,7 +71,7 @@ class AppStoreController extends AbstractController
     /**
      * @api {post} api/appstore/uninstall 卸载应用
      *
-     * @apiDescription 管理员代理 Node AppStore `POST /api/v1/internal/uninstall`，返回 Runtime Task。
+     * @apiDescription 管理员代理 Agent Runtime `POST /api/v1/internal/uninstall`，返回 Runtime Task。
      * @apiVersion 1.0.0
      * @apiGroup appstore
      * @apiName uninstall
@@ -106,16 +106,21 @@ class AppStoreController extends AbstractController
 
     private function forward(string $method, string $path, array $payload = []): array
     {
-        $baseUrl = rtrim((string) config('dootask.appstore_internal_url', ''), '/');
+        $baseUrl = rtrim((string) config('dootask.agent_internal_url', config('dootask.appstore_internal_url', '')), '/');
         if ($baseUrl === '') {
-            return Base::retError('应用市场服务未配置');
+            return Base::retError('Agent Runtime 未配置');
         }
 
         $headers = [
             'Accept' => 'application/json',
             'Token' => (string) Base::token(),
             'Language' => (string) Base::headerOrInput('language'),
+            'X-YeYing-Instance' => (string) config('dootask.agent_instance_id', 'project'),
         ];
+        $internalToken = trim((string) config('dootask.agent_internal_token', ''));
+        if ($internalToken !== '') {
+            $headers['Authorization'] = 'Bearer ' . $internalToken;
+        }
 
         $options = ['headers' => $headers];
         if ($payload !== []) {
@@ -130,12 +135,12 @@ class AppStoreController extends AbstractController
                 'http_errors' => false,
             ]))->request($method, $path, $options);
         } catch (GuzzleException $e) {
-            return Base::retError('无法连接应用市场服务', ['error' => $e->getMessage()]);
+            return Base::retError('无法连接 Agent Runtime', ['error' => $e->getMessage()]);
         }
 
         $body = json_decode((string) $response->getBody(), true);
         if (!is_array($body)) {
-            return Base::retError('应用市场服务返回异常', [
+            return Base::retError('Agent Runtime 返回异常', [
                 'status' => $response->getStatusCode(),
             ]);
         }
@@ -148,7 +153,7 @@ class AppStoreController extends AbstractController
             return Base::retSuccess($message ?: 'success', $data);
         }
 
-        return Base::retError($message ?: '应用市场服务返回错误', [
+        return Base::retError($message ?: 'Agent Runtime 返回错误', [
             'code' => $code,
             'data' => $data,
         ]);

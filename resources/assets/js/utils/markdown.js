@@ -278,6 +278,111 @@ const MarkdownPluginUtils = {
         return text.replace(/:::\s*reasoning\s*[\r\n]*\s*:::/g, '');
     },
 
+    // PlantUML 文本转 hex URL 编码。PlantUML Server 支持 ~h 前缀的 UTF-8 十六进制编码。
+    encodePlantUml(text) {
+        let bytes;
+        if (typeof TextEncoder !== 'undefined') {
+            bytes = new TextEncoder().encode(text);
+        } else {
+            bytes = Array.from(unescape(encodeURIComponent(text)), char => char.charCodeAt(0));
+        }
+        return Array.from(bytes).map(byte => byte.toString(16).padStart(2, '0')).join('');
+    },
+
+    // 浏览器可访问的 PlantUML 根路径。建议配置为同源反向代理路径，例如 /plantuml。
+    getPlantUmlServerUrl() {
+        const serverUrl = typeof window !== 'undefined' && window.systemInfo ? window.systemInfo.plantumlServerUrl : '';
+        return String(serverUrl || '').trim().replace(/\/+$/, '');
+    },
+
+    buildPlantUmlUrl(text) {
+        const serverUrl = MarkdownPluginUtils.getPlantUmlServerUrl();
+        if (!serverUrl) {
+            return '';
+        }
+        return `${serverUrl}/svg/~h${MarkdownPluginUtils.encodePlantUml(text)}`;
+    },
+
+    renderPlantUmlBlock(source, info = 'PlantUML diagram') {
+        const content = source.trim();
+        const imageUrl = MarkdownPluginUtils.buildPlantUmlUrl(content);
+        if (!content || !imageUrl) {
+            return '';
+        }
+
+        const safeUrl = MarkdownPluginUtils.escapeHtml(imageUrl);
+        const safeInfo = MarkdownPluginUtils.escapeHtml(info || 'PlantUML diagram');
+        return `<div class="plantuml-block"><img class="plantuml-diagram" src="${safeUrl}" alt="${safeInfo}" loading="lazy"></div>`;
+    },
+
+    fallbackFence(md, token, language) {
+        const langClass = language ? ` class="language-${MarkdownPluginUtils.escapeHtml(language)}"` : '';
+        return `<pre><code${langClass}>${md.utils.escapeHtml(token.content)}</code></pre>\n`;
+    },
+
+    // 渲染 ```plantuml / ```puml 代码块，以及 @startuml ... @enduml 块。
+    initPlantUmlPlugin(md) {
+        if (md.__dootaskPlantUml) {
+            return;
+        }
+        md.__dootaskPlantUml = true;
+
+        md.block.ruler.before('fence', 'plantuml_block', (state, startLine, endLine, silent) => {
+            const start = state.bMarks[startLine] + state.tShift[startLine];
+            const max = state.eMarks[startLine];
+            const firstLine = state.src.slice(start, max).trim();
+            const match = firstLine.match(/^@start([a-zA-Z0-9_-]*)\b.*$/);
+            if (!match || !/^@startuml\b/i.test(firstLine)) {
+                return false;
+            }
+            if (silent) {
+                return true;
+            }
+
+            let nextLine = startLine + 1;
+            const lines = [state.getLines(startLine, startLine + 1, state.tShift[startLine], true)];
+            while (nextLine < endLine) {
+                const lineStart = state.bMarks[nextLine] + state.tShift[nextLine];
+                const lineMax = state.eMarks[nextLine];
+                const currentLine = state.src.slice(lineStart, lineMax);
+                lines.push(state.getLines(nextLine, nextLine + 1, state.tShift[nextLine], true));
+                nextLine++;
+                if (/^@enduml\s*$/i.test(currentLine.trim())) {
+                    break;
+                }
+            }
+
+            const token = state.push('plantuml', 'uml', 0);
+            token.block = true;
+            token.info = 'plantuml';
+            token.content = lines.join('\n');
+            token.map = [startLine, nextLine];
+            state.line = nextLine;
+            return true;
+        }, {alt: ['paragraph', 'reference', 'blockquote', 'list']});
+
+        const defaultFence = md.renderer.rules.fence;
+        md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+            const token = tokens[idx];
+            const language = (token.info || '').trim().split(/\s+/)[0].toLowerCase();
+            const normalized = token.content.trim();
+            const isPlantUmlFence = ['plantuml', 'puml'].includes(language) || /^@startuml\b/i.test(normalized);
+            if (!isPlantUmlFence) {
+                return defaultFence ? defaultFence(tokens, idx, options, env, self) : MarkdownPluginUtils.fallbackFence(md, token, language);
+            }
+
+            const source = /^@startuml\b/i.test(normalized) ? normalized : `@startuml\n${normalized}\n@enduml`;
+            const rendered = MarkdownPluginUtils.renderPlantUmlBlock(source, token.info || 'PlantUML diagram');
+            return rendered || (defaultFence ? defaultFence(tokens, idx, options, env, self) : MarkdownPluginUtils.fallbackFence(md, token, language));
+        };
+
+        md.renderer.rules.plantuml = (tokens, idx) => {
+            const token = tokens[idx];
+            const rendered = MarkdownPluginUtils.renderPlantUmlBlock(token.content, token.info || 'PlantUML diagram');
+            return rendered || MarkdownPluginUtils.fallbackFence(md, token, 'plantuml');
+        };
+    },
+
     // 修改初始化插件函数（推理）
     initReasoningPlugin(md) {
         md.block.ruler.before('fence', 'reasoning', (state, startLine, endLine, silent) => {
@@ -443,6 +548,7 @@ export function MarkdownConver(text) {
         })
         MarkdownUtils.mdi.use(mila, {attrs: {target: '_blank', rel: 'noopener noreferrer'}})
         MarkdownUtils.mdi.use(mdKatex, {blockClass: 'katexmath-block rounded-md p-[10px]', errorColor: ' #cc0000'})
+        MarkdownPluginUtils.initPlantUmlPlugin(MarkdownUtils.mdi);
         MarkdownPluginUtils.initReasoningPlugin(MarkdownUtils.mdi);
     }
     text = MarkdownPluginUtils.clearEmptyReasoning(text);
@@ -456,6 +562,7 @@ export function MarkdownConver(text) {
 export function MarkdownPreview(text) {
     if (MarkdownUtils.mds === null) {
         MarkdownUtils.mds = MarkdownIt()
+        MarkdownPluginUtils.initPlantUmlPlugin(MarkdownUtils.mds);
         MarkdownPluginUtils.initReasoningPlugin(MarkdownUtils.mds);
     }
     text = MarkdownPluginUtils.clearEmptyReasoning(text);

@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\ComplaintController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\AppStoreController;
+use App\Http\Controllers\Api\PassportController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\StorageObjectController;
 
@@ -81,6 +82,9 @@ Route::prefix('api')->middleware(['webapi'])->group(function () {
     // 应用市场
     Route::any('appstore/{method}',                     AppStoreController::class);
     Route::any('appstore/{method}/{action}',            AppStoreController::class);
+    // 通行证登录
+    Route::any('passport/{method}',                     PassportController::class);
+    Route::any('passport/{method}/{action}',            PassportController::class);
     // 测试
     Route::any('test/{method}',                         TestController::class);
     Route::any('test/{method}/{action}',                TestController::class);

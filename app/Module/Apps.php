@@ -13,9 +13,9 @@ use App\Module\Ihttp;
 
 class Apps
 {
-    private static function appstoreBaseUrl(): string
+    private static function agentBaseUrl(): string
     {
-        return rtrim((string) config('dootask.appstore_internal_url', 'http://appstore'), '/');
+        return rtrim((string) config('dootask.agent_internal_url', config('dootask.appstore_internal_url', 'http://agent')), '/');
     }
 
     /**
@@ -236,7 +236,7 @@ class Apps
     }
 
     /**
-     * Dispatch user lifecycle hook to appstore (user_onboard/user_offboard/user_update).
+     * Dispatch user lifecycle hook to Agent Runtime (user_onboard/user_offboard/user_update).
      *
      * @param User $user 用户对象
      * @param string $action Hook 动作: user_onboard, user_offboard, user_update
@@ -247,7 +247,7 @@ class Apps
     {
         $appKey = config('app.key') ?: '';
         if (empty($appKey)) {
-            info('[appstore_hook] APP_KEY is empty, skip dispatchUserHook');
+            info('[agent_hook] APP_KEY is empty, skip dispatchUserHook');
             return;
         }
 
@@ -268,7 +268,7 @@ class Apps
             }
         }
 
-        $url = sprintf('%s/api/v1/internal/hooks/%s', self::appstoreBaseUrl(), $action);
+        $url = sprintf('%s/api/v1/internal/hooks/%s', self::agentBaseUrl(), $action);
         $payload = [
             'user' => [
                 'id' => (string) $user->userid,
@@ -288,13 +288,15 @@ class Apps
 
         $headers = [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . md5($appKey),
             'Version' => Base::getVersion(),
+            'X-YeYing-Instance' => (string) config('dootask.agent_instance_id', 'project'),
         ];
+        $internalToken = trim((string) config('dootask.agent_internal_token', ''));
+        $headers['Authorization'] = 'Bearer ' . ($internalToken !== '' ? $internalToken : md5($appKey));
 
         $resp = Ihttp::ihttp_request($url, json_encode($payload, JSON_UNESCAPED_UNICODE), $headers, 5);
         if (Base::isError($resp)) {
-            info('[appstore_hook] dispatch fail', [
+            info('[agent_hook] dispatch fail', [
                 'url' => $url,
                 'payload' => $payload,
                 'error' => $resp,

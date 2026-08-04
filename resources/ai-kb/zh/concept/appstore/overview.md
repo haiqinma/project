@@ -26,17 +26,18 @@ last_verified: v0.0.1
 # 应用市场是什么
 
 ## 定义
-应用市场（AppStore）是 YeYing 的插件管理后台，让系统管理员一键安装 / 卸载 / 更新各种功能插件，例如 AI 助手、审批、签到、OnlyOffice 等。其本体是一个名为 `appstore` 的微应用，注册在 `application/admin` 位置（见 `store/mutations.js` 第 396 行）。
+应用市场（AppStore）是 YeYing 的插件管理后台，让系统管理员一键安装 / 卸载 / 更新各种功能插件，例如 AI 助手、审批、签到、OnlyOffice 等。`appstore` 名称现在是兼容入口；真正的安装、升级、失败回滚和卸载由 Agent Runtime 执行，Node 只作为社区发布目录和授权入口。
 
 ## 关键属性
 - **微应用形态**：通过 `MicroApps` 加载 iframe，URL 为 `appstore/internal`
 - **后端校验**：`App\Module\Apps::isInstalled($appId)` 读取 `docker/appstore/config/{appId}/config.yml` 中 `status: installed` 判断
 - **未安装会抛 ApiException**：`Apps::isInstalledThrow()` 提示「应用「X」未安装」
-- **社区发布链路（迁移中）**：社区应用经过 release 校验、审核发布、部署机 Agent 任务和健康检查；Project 只在 Agent 成功后读取本地安装状态镜像
-- **生命周期 Hook**：用户创建 / 离职会调 `dispatchUserHook` 通知各插件（user_onboard / offboard / update）
+- **社区发布链路**：Project 通过 `api/appstore/*` 兼容入口转发到 Agent；Agent 从 Node 查询 release artifact、签名和版本信息
+- **运行控制面**：Agent 负责安装任务、升级、失败回滚、卸载、健康检查和运行状态；Project 不在 Web 请求里拉镜像或启动容器
+- **生命周期 Hook**：用户创建 / 离职会调 `dispatchUserHook` 通知 Agent，再由 Agent 分发给相关插件（user_onboard / offboard / update）
 
 ## 运维 dry-run
-部署机可运行 `scripts/appstore-agent.sh --dry-run` 检查社区发布制品和共享依赖连通性。该检查不下载镜像、不修改插件配置、不启动或停止任何容器；检查后任务会归还为待执行状态。
+新部署应配置 `AGENT_INTERNAL_URL`、`AGENT_INSTANCE_ID` 和 `AGENT_INTERNAL_TOKEN`。旧的 `APPSTORE_INTERNAL_URL` 仅作为兼容名保留；如果继续使用，也应指向 Agent Runtime，而不是直接指向 Node。
 
 ## 插件类型
 - 官方内置：ai、approve、checkin/face、office、drawio、minder、okr、search（manticore）、fileview

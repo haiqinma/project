@@ -304,7 +304,7 @@ MySQL 和 Redis 都是必需依赖，检查失败会返回 `FAIL`。脚本只读
 ./cmd ensure-admin
 ```
 
-生产升级前请先备份数据库和持久文件。生产升级顺序按 `docs/production-upgrade-runbook.md` 执行；S3 迁移按 `docs/storage-s3-migration-runbook.md` 执行。
+生产升级前请先备份数据库和持久文件。生产升级顺序按 `docs/生产升级操作手册.md` 执行；S3 迁移按 `docs/S3存储迁移操作手册.md` 执行。
 
 ## License
 

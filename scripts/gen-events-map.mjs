@@ -3,7 +3,7 @@
  * 事件总线注册表生成脚本
  *
  * 扫描前端代码中 mitt 事件总线（resources/assets/js/store/events.js 导出的 emitter）
- * 的 emit/on/off 调用，按事件名聚合生成 docs/events-map.md。
+ * 的 emit/on/off 调用，按事件名聚合生成 docs/前端事件总线映射.md。
  *
  * 用法: node scripts/gen-events-map.mjs
  * 零第三方依赖（仅 node:fs / node:path）。
@@ -18,7 +18,7 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 // 扫描范围（相对仓库根目录）
 const SCAN_DIR = 'resources/assets/js';
 // 输出文件（相对仓库根目录）
-const OUTPUT_FILE = 'docs/events-map.md';
+const OUTPUT_FILE = 'docs/前端事件总线映射.md';
 // 扫描的文件扩展名
 const EXTENSIONS = new Set(['.js', '.vue']);
 // ====================

@@ -101,10 +101,24 @@ require_local_env_config() {
 
 require_local_database_ready() {
     local status_output=""
+    local db_host="$(env_config_value DB_HOST)"
+    local db_port="$(env_config_value DB_PORT)"
+    local db_name="$(env_config_value DB_DATABASE)"
+    local db_user="$(env_config_value DB_USERNAME)"
 
     cd "${ROOT_DIR}"
     if ! status_output="$(php artisan migrate:status --no-interaction 2>&1)"; then
-        echo "Local database is not ready. Run ./cmd local-install after checking .env DB settings." >&2
+        echo "Local database check failed: ${db_user}@${db_host}:${db_port}/${db_name}." >&2
+        if printf '%s\n' "$status_output" | grep -qE 'Connection refused|SQLSTATE\[HY000\] \[2002\]'; then
+            echo "MySQL is not reachable. Start your shared MySQL service/container, or fix DB_HOST/DB_PORT in .env." >&2
+            echo "This project command does not start MySQL, Redis or other shared middleware." >&2
+        elif printf '%s\n' "$status_output" | grep -qE 'Access denied|SQLSTATE\[HY000\] \[1045\]'; then
+            echo "MySQL rejected the configured credentials. Check DB_USERNAME/DB_PASSWORD in .env." >&2
+        elif printf '%s\n' "$status_output" | grep -qE 'Unknown database|SQLSTATE\[HY000\] \[1049\]'; then
+            echo "The configured database does not exist. Create it first, then run ./cmd local-install." >&2
+        else
+            echo "After the database endpoint is reachable, run ./cmd local-install if migrations have not been initialized." >&2
+        fi
         printf '%s\n' "$status_output" >&2
         exit 1
     fi

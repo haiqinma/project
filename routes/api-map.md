@@ -2,7 +2,7 @@
 
 > 此文件由 `php artisan doc:api-map` 生成，勿手改。
 
-接口总数：316
+接口总数：319
 
 ## 路由规则
 
@@ -397,6 +397,14 @@ API 使用动态路由（见 `routes/web.php`），URL 段映射为控制器方�
 | api/appstore/install | install() | post | 安装应用 |
 | api/appstore/upgrade | upgrade() | post | 升级应用 |
 | api/appstore/uninstall | uninstall() | post | 卸载应用 |
+
+## passport（PassportController）
+
+| URL | 方法名 | HTTP | 说明 |
+| --- | --- | --- | --- |
+| api/passport/login/session | login__session() | post | 创建通行证登录会话 |
+| api/passport/login/status | login__status() | get | 查询通行证登录状态 |
+| api/passport/callback | callback() | get | 接收 Node Passport 登录回调 |
 
 ## test（TestController）
 

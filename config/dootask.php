@@ -35,16 +35,39 @@ return [
     // Persistent upload backend. Set to s3 only after S3_* is configured and historical uploads are migrated.
     'file_storage_disk' => env('FILE_STORAGE_DISK', 'local'),
 
+    // Markdown PlantUML browser-accessible base URL. Keep empty to show PlantUML as code blocks.
+    // Recommended production value is a same-origin reverse proxy path, for example /plantuml.
+    // Direct plantuml/plantuml-server:jetty URLs should point to the server root, not /plantuml.
+    'plantuml_server_url' => env('PLANTUML_SERVER_URL', ''),
+
     // 在线授权：YeYing AppStore 授权中心地址（OnlineLicense；测试可指向开发环境）
     'online_license_appstore_url' => env('ONLINE_LICENSE_APPSTORE_URL', 'https://appstore.yeying.pub'),
 
-    // 应用市场内网地址：容器部署默认走 appstore 服务名；本机直跑可指向宿主机暴露端口
-    'appstore_internal_url' => env('APPSTORE_INTERNAL_URL', 'http://appstore'),
+    // YeYing Passport / Node 登录中心。为空时登录二维码回退到旧的 Project 本地二维码。
+    'passport_node_url' => env('PASSPORT_NODE_URL', ''),
+
+    // 当前 Project 在 Node 中登记的应用 ID。
+    'passport_client_id' => env('PASSPORT_CLIENT_ID', ''),
+
+    // 通行证登录申请的授权范围。
+    'passport_scope' => env('PASSPORT_SCOPE', 'openid profile wallet'),
+
+    // Agent Runtime 内网地址：Project 的 AppStore 兼容入口优先转发到 Agent，由 Agent 再访问 Node Registry。
+    'agent_internal_url' => env('AGENT_INTERNAL_URL', env('APPSTORE_INTERNAL_URL', 'http://agent')),
+
+    // Agent Runtime 实例 ID：用于 Project 与 Agent 之间标识当前业务实例。
+    'agent_instance_id' => env('AGENT_INSTANCE_ID', env('APPSTORE_INSTANCE_ID', 'project')),
+
+    // Agent Runtime internal token：应与 Agent 服务的 HUB_INTERNAL_TOKEN 保持一致。
+    'agent_internal_token' => env('AGENT_INTERNAL_TOKEN', env('APPSTORE_AGENT_TOKEN', '')),
+
+    // 历史兼容名：旧部署仍可配置 APPSTORE_INTERNAL_URL，但社区模式下应指向 Agent，不应直接指向 Node。
+    'appstore_internal_url' => env('APPSTORE_INTERNAL_URL', env('AGENT_INTERNAL_URL', 'http://agent')),
 
     // AI 网关内网地址：容器部署默认经 nginx 转发；本机直跑时可按需改到单独暴露的 AI 网关
     'ai_internal_url' => env('AI_INTERNAL_URL', 'http://nginx'),
 
-    // 前端微应用打开 AppStore 的入口地址；默认走同源 /appstore 反代，本机直跑可改成独立端口
+    // 前端微应用打开 AppStore 兼容入口；后续 UI 可由 Agent Runtime 代理 Node Registry。
     'appstore_entry_url' => env('APPSTORE_ENTRY_URL', 'appstore/internal?language={system_lang}&theme={system_theme}'),
 
     // YeYing community runtime implementation. It does not require an external binary.

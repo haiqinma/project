@@ -32,19 +32,19 @@ last_verified: v0.0.1
 1. 进入应用商店，定位到已安装的插件
 2. 点击「卸载」按钮
 3. 确认弹窗：通常会提示「卸载后相关数据如何处理」
-4. Project 调用 Node AppStore 创建 `uninstall` Runtime Task
-5. 等待 Runtime Agent 停容器并移除本地安装状态
+4. Project 调用 Agent Runtime 创建 `uninstall` 任务
+5. 等待 Agent 停容器并移除本地安装状态
 6. 刷新「应用」页，对应菜单消失
 
 ## 卸载做了什么
-- Node AppStore 创建 `uninstall` Runtime Task
+- Agent Runtime 创建 `uninstall` 任务，Node 只提供发布目录和授权入口
 - Agent 调 `docker compose down --remove-orphans` 停掉对应容器，但默认保留命名卷
 - Agent 删除 `docker/appstore/config/{appId}/` 的安装状态和反代配置
 - 之后所有对该插件的后端调用会被 `Apps::isInstalledThrow()` 拦截，抛 ApiException
 
 ## 卸载会影响的数据
 取决于插件实现：
-- Runtime Agent 不带 `--volumes`，因此命名卷数据默认保留
+- Agent 不带 `--volumes`，因此命名卷数据默认保留
 - 重新安装通常能恢复数据
 - 若要彻底删数据，需要手动到服务器删 `data/` 目录（不可逆，做之前先备份）
 
