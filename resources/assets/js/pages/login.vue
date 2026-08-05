@@ -24,6 +24,14 @@
                         <VueQrcode v-if="qrcodeUrl" :value="qrcodeUrl" :options="{width:200,margin:2}"></VueQrcode>
                         <Loading v-else/>
                         <div class="login-qrcode-status">{{qrcodeStatusText}}</div>
+                        <Button
+                            v-if="qrcodeMode === 'passport' && qrcodeUrlValue"
+                            type="primary"
+                            size="large"
+                            long
+                            @click.stop="openPassportAuthorize">
+                            {{$L('使用本机通行证登录')}}
+                        </Button>
                     </div>
                 </transition>
                 <transition name="login-mode">
@@ -485,6 +493,14 @@ export default {
                 return;
             }
             this.qrcodeStatusText = this.$L('请使用手机相机或夜莺钱包扫码确认登录。');
+        },
+
+        openPassportAuthorize() {
+            if (this.qrcodeMode !== 'passport' || !this.qrcodeUrlValue) {
+                return;
+            }
+            window.open(this.qrcodeUrlValue, '_blank', 'noopener,noreferrer');
+            this.qrcodeStatusText = this.$L('已打开本机通行证确认页，请完成指纹或 Passkey 验证。');
         },
 
         forgotPassword() {
