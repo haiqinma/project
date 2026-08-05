@@ -200,6 +200,7 @@ export default {
             qrcodeStatusText: '',
             qrcodeTimer: null,
             qrcodeLoad: false,
+            qrcodeRequestSeq: 0,
 
             codeNeed: false,
             codeLoad: 0,
@@ -365,6 +366,8 @@ export default {
             if (this.loginMode != 'qrcode') {
                 return;
             }
+            this.qrcodeRequestSeq += 1;
+            const requestSeq = this.qrcodeRequestSeq;
             this.qrcodeVal = '';
             this.qrcodeUrlValue = '';
             this.qrcodeSessionId = '';
@@ -374,6 +377,9 @@ export default {
                 url: 'passport/login/session',
                 data: {},
             }).then(({data}) => {
+                if (requestSeq !== this.qrcodeRequestSeq || this.loginMode !== 'qrcode') {
+                    return;
+                }
                 this.qrcodeMode = 'passport';
                 this.qrcodeSessionId = data.session_id || '';
                 this.qrcodeUrlValue = data.qrcode_url || '';
@@ -382,6 +388,9 @@ export default {
                     this.useLegacyQrcode();
                 }
             }).catch(({data}) => {
+                if (requestSeq !== this.qrcodeRequestSeq || this.loginMode !== 'qrcode') {
+                    return;
+                }
                 if (data?.code !== 'passport_not_configured') {
                     this.qrcodeStatusText = this.$L('通行证服务不可用，已切换本地扫码登录。');
                 }
@@ -404,20 +413,43 @@ export default {
             if (this.qrcodeLoad || (!this.qrcodeVal && !this.qrcodeSessionId)) {
                 return;
             }
+            const requestSeq = this.qrcodeRequestSeq;
+            const requestMode = this.qrcodeMode;
+            const requestSessionId = this.qrcodeSessionId;
+            const requestQrcodeVal = this.qrcodeVal;
             this.qrcodeLoad = true
-            const request = this.qrcodeMode === 'passport'
-                ? {url: 'passport/login/status', data: {session_id: this.qrcodeSessionId}}
-                : {url: 'users/login/qrcode?code=' + this.qrcodeVal};
+            const request = requestMode === 'passport'
+                ? {url: 'passport/login/status', data: {session_id: requestSessionId}}
+                : {url: 'users/login/qrcode?code=' + requestQrcodeVal};
             this.$store.dispatch("call", request).then(({data}) => {
-                if (this.qrcodeMode === 'passport') {
+                if (requestSeq !== this.qrcodeRequestSeq || requestMode !== this.qrcodeMode) {
+                    return;
+                }
+                if (requestMode === 'passport' && requestSessionId !== this.qrcodeSessionId) {
+                    return;
+                }
+                if (requestMode === 'legacy' && requestQrcodeVal !== this.qrcodeVal) {
+                    return;
+                }
+                if (requestMode === 'passport') {
                     this.handlePassportQrcodeStatus(data);
                     return;
                 }
                 this.$store.dispatch("handleClearCache", data).then(this.goNext);
             }).catch(({data, msg}) => {
-                if (this.qrcodeMode === 'passport' && ['expired', 'passport_wallet_unbound', 'wallet_email_required'].includes(data?.code)) {
-                    this.qrcodeSessionId = '';
-                    this.qrcodeStatusText = msg || this.$L('扫码登录失败，请刷新二维码。');
+                if (requestSeq !== this.qrcodeRequestSeq || requestMode !== this.qrcodeMode) {
+                    return;
+                }
+                if (requestMode === 'passport' && requestSessionId !== this.qrcodeSessionId) {
+                    return;
+                }
+                if (requestMode === 'passport') {
+                    if (['expired', 'passport_wallet_unbound', 'wallet_email_required'].includes(data?.code)) {
+                        this.qrcodeSessionId = '';
+                        this.qrcodeStatusText = msg || this.$L('扫码登录失败，请刷新二维码。');
+                        return;
+                    }
+                    this.qrcodeStatusText = msg || this.$L('通行证登录状态异常，请刷新二维码。');
                 }
             }).finally(_ => {
                 this.qrcodeLoad = false
@@ -434,6 +466,10 @@ export default {
                 this.qrcodeStatusText = this.$L('已扫码，请在手机上确认登录。');
                 return;
             }
+            if (status === 'approved') {
+                this.qrcodeStatusText = this.$L('通行证登录成功，请稍候...');
+                return;
+            }
             if (status === 'rejected') {
                 this.qrcodeSessionId = '';
                 this.qrcodeStatusText = this.$L('已拒绝登录，请刷新二维码。');
@@ -442,6 +478,10 @@ export default {
             if (status === 'expired') {
                 this.qrcodeSessionId = '';
                 this.qrcodeStatusText = this.$L('二维码已过期，请刷新。');
+                return;
+            }
+            if (status && status !== 'pending') {
+                this.qrcodeStatusText = this.$L('通行证登录状态异常，请刷新二维码。');
                 return;
             }
             this.qrcodeStatusText = this.$L('请使用手机相机或夜莺钱包扫码确认登录。');
