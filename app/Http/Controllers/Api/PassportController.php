@@ -192,11 +192,7 @@ class PassportController extends AbstractController
             'request_id' => substr((string)($cache['request_id'] ?? ''), 0, 18),
         ]);
 
-        return response(
-            '<!doctype html><meta charset="utf-8"><title>YeYing Passport</title><body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:32px;line-height:1.6"><h3>通行证登录已确认</h3><p>请回到电脑端继续使用 Project，本页面可以关闭。</p></body>',
-            200,
-            ['Content-Type' => 'text/html; charset=utf-8']
-        );
+        return response($this->callbackHtml($sessionId), 200, ['Content-Type' => 'text/html; charset=utf-8']);
     }
 
     private function completeLoginByAuthorizationCode(string $sessionId, array $cache): array
@@ -394,6 +390,46 @@ class PassportController extends AbstractController
     private function sessionCacheKey(string $sessionId): string
     {
         return 'passport_login_session:' . hash('sha256', $sessionId);
+    }
+
+    private function callbackHtml(string $sessionId): string
+    {
+        $payload = json_encode([
+            'sessionId' => $sessionId,
+            'status' => 'approved',
+            'time' => time(),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?: '{}';
+
+        return <<<HTML
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>YeYing Passport</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:32px;line-height:1.6;color:#1f2937">
+    <h3>通行证登录已确认</h3>
+    <p>正在通知 Project 登录页，请回到电脑端继续使用。</p>
+    <script>
+        (function () {
+            var payload = {$payload};
+            try {
+                window.localStorage.setItem('__project_passport_callback__', JSON.stringify(payload));
+            } catch (e) {}
+            try {
+                var channel = new BroadcastChannel('project-passport-login');
+                channel.postMessage(payload);
+                channel.close();
+            } catch (e) {}
+            setTimeout(function () {
+                window.close();
+            }, 1200);
+        })();
+    </script>
+</body>
+</html>
+HTML;
     }
 
     private function base64UrlEncode(string $value): string
