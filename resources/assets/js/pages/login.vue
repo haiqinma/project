@@ -207,6 +207,7 @@ export default {
             qrcodeMode: 'legacy',
             qrcodeStatusText: '',
             qrcodeTimer: null,
+            qrcodeBroadcastChannel: null,
             qrcodeLoad: false,
             qrcodeRequestSeq: 0,
 
@@ -244,12 +245,14 @@ export default {
         }
         //
         this.qrcodeTimer = setInterval(this.qrcodeStatus, 2000);
+        this.bindPassportCallbackEvents();
         //
         emitter.on('useSSOLogin', this.inputServerUrl);
     },
 
     beforeDestroy() {
         clearInterval(this.qrcodeTimer);
+        this.unbindPassportCallbackEvents();
         emitter.off('useSSOLogin', this.inputServerUrl);
     },
 
@@ -493,6 +496,59 @@ export default {
                 return;
             }
             this.qrcodeStatusText = this.$L('请使用手机相机或夜莺钱包扫码确认登录。');
+        },
+
+        bindPassportCallbackEvents() {
+            window.addEventListener('storage', this.onPassportCallbackStorage);
+            window.addEventListener('focus', this.onPassportWindowFocus);
+            document.addEventListener('visibilitychange', this.onPassportVisibilityChange);
+            if ('BroadcastChannel' in window) {
+                this.qrcodeBroadcastChannel = new BroadcastChannel('project-passport-login');
+                this.qrcodeBroadcastChannel.onmessage = event => this.handlePassportCallbackEvent(event.data);
+            }
+        },
+
+        unbindPassportCallbackEvents() {
+            window.removeEventListener('storage', this.onPassportCallbackStorage);
+            window.removeEventListener('focus', this.onPassportWindowFocus);
+            document.removeEventListener('visibilitychange', this.onPassportVisibilityChange);
+            if (this.qrcodeBroadcastChannel) {
+                this.qrcodeBroadcastChannel.close();
+                this.qrcodeBroadcastChannel = null;
+            }
+        },
+
+        onPassportCallbackStorage(event) {
+            if (event.key !== '__project_passport_callback__' || !event.newValue) {
+                return;
+            }
+            this.handlePassportCallbackEvent($A.jsonParse(event.newValue));
+        },
+
+        onPassportWindowFocus() {
+            this.checkPassportCallbackAfterReturn();
+        },
+
+        onPassportVisibilityChange() {
+            if (!document.hidden) {
+                this.checkPassportCallbackAfterReturn();
+            }
+        },
+
+        checkPassportCallbackAfterReturn() {
+            const callback = $A.jsonParse(window.localStorage.getItem('__project_passport_callback__'));
+            this.handlePassportCallbackEvent(callback);
+        },
+
+        handlePassportCallbackEvent(callback) {
+            if (this.qrcodeMode !== 'passport' || !this.qrcodeSessionId) {
+                return;
+            }
+            if (callback?.sessionId !== this.qrcodeSessionId) {
+                return;
+            }
+            this.qrcodeStatusText = this.$L('通行证登录成功，请稍候...');
+            this.qrcodeStatus();
         },
 
         openPassportAuthorize() {

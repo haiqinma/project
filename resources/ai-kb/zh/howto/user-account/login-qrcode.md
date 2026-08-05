@@ -43,7 +43,7 @@ YeYing 登录页支持扫码登录。配置 Node Passport 后，登录页优先�
 ## 通行证接口流程（了解原理用）
 - 被登录端：调用 `api/passport/login/session` 创建 Node Passport 登录会话并展示二维码
 - 手机端：打开 Node Passport 授权页 `/passport/authorize?requestId=...`，用 Passkey/指纹完成确认
-- 被登录端：周期性调用 `api/passport/login/status`，确认通过后 Project 用一次性 code 换取本地用户 token
+- 被登录端：周期性调用 `api/passport/login/status`，确认通过后 Project 用一次性 code 换取本地用户 token；同一浏览器使用本机通行证登录时，回调页会通知登录页立即完成状态检查
 - 未配置 `PASSPORT_NODE_URL` 或通行证服务不可用时，前端回退旧版本地扫码登录
 
 ## 部署注意
