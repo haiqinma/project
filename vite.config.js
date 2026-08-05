@@ -103,6 +103,7 @@ export default defineConfig(({command, mode}) => {
             watch: {
                 ignored: [
                     '**/node_modules/**',
+                    '**/.env.template',
                     '**/storage/**',
                     '**/public/uploads/**',
                     '**/database/**',

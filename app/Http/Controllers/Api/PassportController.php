@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Request;
 
@@ -75,6 +76,13 @@ class PassportController extends AbstractController
             'app_id' => $appId,
         ], self::SESSION_TTL_SECONDS);
 
+        Log::info('passport login session created', [
+            'event' => 'passport_login_session_created',
+            'session_id' => substr($sessionId, 0, 12),
+            'request_id' => substr($requestId, 0, 18),
+            'app_id' => $appId,
+        ]);
+
         return Base::retSuccess('success', [
             'session_id' => $sessionId,
             'qrcode_url' => $qrcodeUrl,
@@ -100,6 +108,12 @@ class PassportController extends AbstractController
         }
         $cache = Cache::get($this->sessionCacheKey($sessionId));
         if (!is_array($cache)) {
+            Log::info('passport login status', [
+                'event' => 'passport_login_status',
+                'session_id' => substr($sessionId, 0, 12),
+                'status' => 'expired',
+                'reason' => 'cache_missing',
+            ]);
             return Base::retError('通行证登录二维码已过期', ['code' => 'expired', 'status' => 'expired']);
         }
 
@@ -110,6 +124,12 @@ class PassportController extends AbstractController
         $requestId = trim((string)($cache['request_id'] ?? ''));
         if ($requestId === '') {
             Cache::forget($this->sessionCacheKey($sessionId));
+            Log::info('passport login status', [
+                'event' => 'passport_login_status',
+                'session_id' => substr($sessionId, 0, 12),
+                'status' => 'expired',
+                'reason' => 'request_id_missing',
+            ]);
             return Base::retError('通行证登录二维码已过期', ['code' => 'expired', 'status' => 'expired']);
         }
 
@@ -120,6 +140,12 @@ class PassportController extends AbstractController
 
         $data = $this->normalizeNodeData($result['data']);
         $status = strtolower(trim((string)($data['status'] ?? 'pending')));
+        Log::info('passport login status', [
+            'event' => 'passport_login_status',
+            'session_id' => substr($sessionId, 0, 12),
+            'request_id' => substr($requestId, 0, 18),
+            'status' => $status ?: 'pending',
+        ]);
         if (!in_array($status, ['approved', 'success', 'confirmed'], true)) {
             return Base::retSuccess('success', [
                 'status' => $status ?: 'pending',
@@ -160,6 +186,12 @@ class PassportController extends AbstractController
         $cache['status'] = 'approved';
         Cache::put($cacheKey, $cache, self::SESSION_TTL_SECONDS);
 
+        Log::info('passport login callback received', [
+            'event' => 'passport_login_callback_received',
+            'session_id' => substr($sessionId, 0, 12),
+            'request_id' => substr((string)($cache['request_id'] ?? ''), 0, 18),
+        ]);
+
         return response(
             '<!doctype html><meta charset="utf-8"><title>YeYing Passport</title><body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:32px;line-height:1.6"><h3>通行证登录已确认</h3><p>请回到电脑端继续使用 Project，本页面可以关闭。</p></body>',
             200,
@@ -179,16 +211,34 @@ class PassportController extends AbstractController
 
         $identity = $this->exchangeCode($code, $cache);
         if (!Base::isSuccess($identity)) {
+            Log::info('passport login exchange failed', [
+                'event' => 'passport_login_exchange_failed',
+                'session_id' => substr($sessionId, 0, 12),
+                'request_id' => substr((string)($cache['request_id'] ?? ''), 0, 18),
+                'code' => $identity['data']['code'] ?? 'unknown',
+            ]);
             return $identity;
         }
 
         $login = $this->loginByPassportIdentity($identity['data']);
         if (!Base::isSuccess($login)) {
             Cache::forget($this->sessionCacheKey($sessionId));
+            Log::info('passport login bind failed', [
+                'event' => 'passport_login_bind_failed',
+                'session_id' => substr($sessionId, 0, 12),
+                'request_id' => substr((string)($cache['request_id'] ?? ''), 0, 18),
+                'code' => $login['data']['code'] ?? 'unknown',
+            ]);
             return $login;
         }
 
         Cache::forget($this->sessionCacheKey($sessionId));
+        Log::info('passport login completed', [
+            'event' => 'passport_login_completed',
+            'session_id' => substr($sessionId, 0, 12),
+            'request_id' => substr((string)($cache['request_id'] ?? ''), 0, 18),
+            'userid' => $login['data']->userid ?? null,
+        ]);
         return Base::retSuccess('success', array_merge($login['data']->toArray(), [
             'token' => $login['data']->token,
             'status' => 'approved',
