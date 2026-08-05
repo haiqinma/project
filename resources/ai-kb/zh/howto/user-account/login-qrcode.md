@@ -24,7 +24,7 @@ negative:
   - 旧版本地二维码 code 30 秒内有效；过期需刷新登录页重新生成
   - 旧版本地二维码 code 必须 ≥ 32 字符，被篡改/截断会报「参数错误」
   - 不支持「同一二维码多端复用」，扫码成功并被消费后立即失效
-last_verified: v0.0.1
+last_verified: v0.0.2
 ---
 
 # 扫码登录
@@ -42,7 +42,7 @@ YeYing 登录页支持扫码登录。配置 Node Passport 后，登录页优先�
 
 ## 通行证接口流程（了解原理用）
 - 被登录端：调用 `api/passport/login/session` 创建 Node Passport 登录会话并展示二维码
-- 手机端：打开 Node Passport 确认页，用 Passkey/指纹完成确认
+- 手机端：打开 Node Passport 授权页 `/passport/authorize?requestId=...`，用 Passkey/指纹完成确认
 - 被登录端：周期性调用 `api/passport/login/status`，确认通过后 Project 用一次性 code 换取本地用户 token
 - 未配置 `PASSPORT_NODE_URL` 或通行证服务不可用时，前端回退旧版本地扫码登录
 

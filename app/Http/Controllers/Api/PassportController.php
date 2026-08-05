@@ -259,10 +259,9 @@ class PassportController extends AbstractController
 
     private function loginByPassportIdentity(array $identity): array
     {
-        $wallet = $identity['wallet'] ?? [];
-        $address = strtolower(trim((string)($wallet['address'] ?? $identity['wallet_address'] ?? $identity['address'] ?? '')));
-        $chain = trim((string)($wallet['chain'] ?? $identity['chain'] ?? 'eip155')) ?: 'eip155';
-        $chainId = trim((string)($wallet['chain_id'] ?? $identity['chain_id'] ?? config('dootask.wallet_chain_id', '1')));
+        $address = strtolower(trim((string)($identity['walletAddress'] ?? '')));
+        $chain = 'eip155';
+        $chainId = trim((string)config('dootask.wallet_chain_id', '1'));
 
         if (!preg_match('/^0x[a-f0-9]{40}$/', $address)) {
             return Base::retError('通行证未返回有效钱包地址', ['code' => 'passport_wallet_missing']);
