@@ -90,6 +90,16 @@ export default [
                         component: () => import('./pages/manage/setting/device.vue'),
                     },
                     {
+                        name: 'manage-setting-automation-token',
+                        path: 'automation-token',
+                        component: () => import('./pages/manage/setting/automationToken.vue'),
+                    },
+                    {
+                        name: 'manage-setting-automation-audit',
+                        path: 'automation-audit',
+                        component: () => import('./pages/manage/setting/automationAudit.vue'),
+                    },
+                    {
                         name: 'manage-setting-version',
                         path: 'version',
                         component: () => import('./pages/manage/setting/version.vue'),

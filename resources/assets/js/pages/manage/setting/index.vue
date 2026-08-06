@@ -75,7 +75,7 @@ export default {
         ...mapState(['userInfo', 'userIsAdmin', 'clientNewVersion', 'systemConfig']),
 
         showContent() {
-            return this.$route.path.match(/^\/manage\/setting\/\w+$/)
+            return this.$route.path.match(/^\/manage\/setting\/[\w-]+$/)
         },
 
         menu() {
@@ -85,6 +85,7 @@ export default {
                 {path: 'email', name: '修改邮箱'},
                 {path: 'language', name: '语言设置', divided: true},
                 {path: 'theme', name: '主题设置'},
+                {path: 'automation-token', name: '访问令牌', divided: true},
             ]
 
             if (this.$Electron || this.$isEEUIApp) {
@@ -102,6 +103,7 @@ export default {
                 menu.push(...[
                     {path: 'system', name: '系统设置', divided: true},
                     {path: 'license', name: 'License Key'},
+                    {path: 'automation-audit', name: '自动化访问审计'},
                 ])
             }
             menu.push(...[

@@ -40,7 +40,7 @@ features:
     scope: end-user
     batch: B1
     priority: P0
-    chunk_count_est: 12
+    chunk_count_est: 13
     owner: ~
     status: drafted
     chunks:
@@ -484,6 +484,8 @@ features:
       - user-settings.notification.howto
       - user-settings.password.howto
       - user-settings.profile.howto
+      - user-settings.automation-token.howto
+      - user-settings.automation-audit.howto
       - user-settings.tags.howto
       - user-settings.theme.howto
       - user-settings.entry.menu-map

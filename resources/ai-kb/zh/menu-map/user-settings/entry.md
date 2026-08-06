@@ -39,6 +39,8 @@ last_verified: v0.0.1
 - 修改邮箱 → [[user-settings.email.howto]]
 - 语言设置 → [[user-settings.language.howto]]
 - 主题设置 → [[user-settings.theme.howto]]
+- 访问令牌 → [[user-settings.automation-token.howto]]
+- 自动化访问审计（仅管理员）→ [[user-settings.automation-audit.howto]]
 - 键盘设置（仅 Electron / 移动端）→ [[user-settings.shortcut.concept]]
 - 系统设置 / License Key（仅系统管理员可见）
 - 更新日志 / 版本 / 登录设备 / 清除缓存 / 退出登录
