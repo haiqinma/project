@@ -37,17 +37,16 @@ class DocApiMap extends Command
 
     /**
      * 从已注册路由中收集 api 前缀与控制器的映射
-     * 匹配 routes/web.php 中的动态路由：api/{prefix}/{method}
+     * 匹配 routes/web.php 中的动态路由：api/{prefix}/{method}[/{action}]
      * @return array [prefix => 控制器类名]
      */
     private function collectControllers(): array
     {
         $controllers = [];
         foreach (Route::getRoutes() as $route) {
-            if (!preg_match('/^api\/(\w+)\/\{method}$/', $route->uri())) {
+            if (!preg_match('/^api\/([^\/]+)\/\{method}(?:\/\{action})?$/', $route->uri(), $match)) {
                 continue;
             }
-            preg_match('/^api\/(\w+)\/\{method}$/', $route->uri(), $match);
             $class = $route->getAction('controller');
             if ($class && class_exists($class)) {
                 $controllers[$match[1]] = $class;
@@ -93,7 +92,8 @@ class DocApiMap extends Command
     {
         $doc = $method->getDocComment();
         if ($doc && preg_match('/@api\s+\{(\w+)}\s+(\S+)(?:[ \t]+(.+))?/', $doc, $match)) {
-            return [strtolower($match[1]), trim($match[3] ?? '')];
+            $title = preg_replace('/\s*\*\/\s*$/', '', $match[3] ?? '');
+            return [strtolower($match[1]), trim((string) $title)];
         }
         return ['any', ''];
     }

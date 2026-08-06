@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\PassportController;
 use App\Http\Controllers\Api\UploadController;
+use App\Http\Controllers\Api\AutomationTokenController;
 use App\Http\Controllers\StorageObjectController;
 
 /*
@@ -40,6 +41,9 @@ Route::any('api/public/auth/{method}', WalletAuthController::class)->middleware(
  * 接口
  */
 Route::prefix('api')->middleware(['webapi'])->group(function () {
+    // 访问令牌管理（网页登录态）
+    Route::any('automation-token/{method}', AutomationTokenController::class);
+    Route::any('automation-token/{method}/{action}', AutomationTokenController::class);
     // 会员
     Route::any('users/{method}',                        UsersController::class);
     Route::any('users/{method}/{action}',               UsersController::class);

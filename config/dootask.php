@@ -2,6 +2,14 @@
 
 return [
 
+    // 访问令牌允许的最大有效期与签名时间窗口。
+    'automation_token_max_days' => env('AUTOMATION_TOKEN_MAX_DAYS', 90),
+    'automation_token_time_window' => env('AUTOMATION_TOKEN_TIME_WINDOW', 300),
+    'automation_token_rate_per_minute' => env('AUTOMATION_TOKEN_RATE_PER_MINUTE', 60),
+
+    // 可选的令牌创建二次授权器，可实现钱包签名或外部审批确认。
+    'automation_token_creation_authorizer' => null,
+
     // 系统设置开关：设为 'disabled' 时禁止通过接口修改系统设置（SystemController）
     'system_setting' => env('SYSTEM_SETTING'),
 
