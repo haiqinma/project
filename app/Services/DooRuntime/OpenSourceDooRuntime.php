@@ -5,6 +5,7 @@ namespace App\Services\DooRuntime;
 use App\Exceptions\ApiException;
 use App\Module\Base;
 use App\Models\User;
+use App\Services\RequestContext;
 use Cache;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
@@ -198,6 +199,10 @@ class OpenSourceDooRuntime extends AbstractDooRuntime
 
     public function userId(): int
     {
+        $user = RequestContext::get('auth');
+        if ($user instanceof User) {
+            return $user->userid;
+        }
         return intval($this->getTokenPayload()['userid'] ?? 0);
     }
 
@@ -208,11 +213,19 @@ class OpenSourceDooRuntime extends AbstractDooRuntime
 
     public function userEmail(): string
     {
+        $user = RequestContext::get('auth');
+        if ($user instanceof User) {
+            return $user->email;
+        }
         return strval($this->getTokenPayload()['email'] ?? '');
     }
 
     public function userEncrypt(): string
     {
+        $user = RequestContext::get('auth');
+        if ($user instanceof User) {
+            return (string) $user->encrypt;
+        }
         return strval($this->getTokenPayload()['encrypt'] ?? '');
     }
 
