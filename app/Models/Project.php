@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Exceptions\ApiException;
 use App\Module\Base;
+use App\Services\RequestContext;
 use App\Tasks\PushTask;
 use Arr;
 use Carbon\Carbon;
@@ -219,6 +220,10 @@ class Project extends AbstractModel
             ])
             ->join('project_users', 'projects.id', '=', 'project_users.project_id')
             ->where('project_users.userid', $userid);
+        $tokenProjectIds = RequestContext::get('access_token_project_ids');
+        if (is_array($tokenProjectIds)) {
+            $query->whereIn('projects.id', array_map('intval', $tokenProjectIds ?: [0]));
+        }
         if ($owner !== null) {
             $query->where('project_users.owner', $owner);
         }

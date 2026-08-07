@@ -55,7 +55,7 @@ export default {
         loadData(page = 1) {
             this.loading = true
             this.$store.dispatch('call', {
-                url: 'automation-token/admin/audits',
+                url: 'token/admin/audits',
                 data: {...this.filters, page, pagesize: this.pageSize},
             }).then(({data}) => {
                 this.rows = data.data

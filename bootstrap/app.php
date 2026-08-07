@@ -43,7 +43,6 @@ return Application::configure(basePath: $_ENV['APP_BASE_PATH'] ?? dirname(__DIR_
 
         $middleware->alias([
             'webapi' => \App\Http\Middleware\WebApi::class,
-            'automation.auth' => \App\Http\Middleware\AutomationTokenAuth::class,
         ]);
 
         $middleware->redirectGuestsTo('/login');

@@ -44,6 +44,14 @@ EOF
   php -r 'exit((int) !extension_loaded("swoole"));' || { echo "PHP Swoole extension is required." >&2; exit 1; }
 }
 
+run_pending_migrations() {
+  echo "Checking database migrations..."
+  if ! php "$root_dir/artisan" migrate --force --no-interaction; then
+    echo "Database migration failed. YeYing was not started." >&2
+    exit 1
+  fi
+}
+
 is_running() {
   [[ -f "$pid_file" ]] || return 1
   local pid
@@ -72,6 +80,7 @@ start() {
     exit 1
   fi
   cd "$root_dir"
+  run_pending_migrations
   nohup php "$root_dir/bin/laravels" start >>"$log_dir/starter.log" 2>&1 &
   echo $! > "$pid_file"
   for _ in {1..30}; do

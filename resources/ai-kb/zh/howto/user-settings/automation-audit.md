@@ -1,12 +1,12 @@
 ---
 id: user-settings.automation-audit.howto
-title: 查看自动化访问审计
+title: 查看访问令牌审计
 type: howto
 feature: user-settings
 scope: admin
 locale: zh
 aliases:
-  - 怎么查谁用了自动化令牌
+  - 怎么查谁用了访问令牌
   - AK SK 调用记录在哪里
   - 查看令牌认证失败记录
 related_tools: []
@@ -19,11 +19,11 @@ negative:
 last_verified: v0.0.2
 ---
 
-# 查看自动化访问审计
+# 查看访问令牌审计
 
 ## 入口
 
-- 桌面端 Web / Electron：右上角头像 →「设置」→「自动化访问审计」
+- 桌面端 Web / Electron：右上角头像 →「设置」→「访问令牌审计」
 - 路由：`/manage/setting/automation-audit`
 - 仅系统管理员可访问。
 

@@ -14,7 +14,7 @@
                     </div>
                     <div class="token-ak">{{token.access_key}}</div>
                     <div class="token-meta">{{$L('授权项目')}}: {{token.projects.map(item => item.name).join('、')}}</div>
-                    <div class="token-meta">{{$L('权限范围')}}: {{token.scopes.join(', ')}}</div>
+                    <div class="token-meta">{{$L('访问范围')}}: {{$L('仅限所选项目，并沿用当前用户的项目权限')}}</div>
                     <div class="token-meta">{{$L('过期时间')}}: {{token.expires_at}} · {{$L('最近使用')}}: {{token.last_used_at || $L('从未使用')}}</div>
                 </div>
                 <div class="token-actions">
@@ -35,12 +35,7 @@
                         <Option v-for="project in projects" :key="project.id" :value="project.id">{{project.name}}</Option>
                     </Select>
                 </FormItem>
-                <FormItem :label="$L('权限范围')">
-                    <CheckboxGroup v-model="form.scopes" class="scope-list">
-                        <Checkbox v-for="scope in scopes" :key="scope" :label="scope">{{scope}}</Checkbox>
-                    </CheckboxGroup>
-                    <Alert v-if="hasWriteScope" type="warning" show-icon>{{$L('写权限允许自动化工具修改任务数据，请仅按需授权。')}}</Alert>
-                </FormItem>
+                <Alert type="warning" show-icon>{{$L('令牌仅能访问所选项目，并沿用当前用户在项目中的权限。')}}</Alert>
                 <FormItem :label="$L('有效期')">
                     <Select v-model="form.days">
                         <Option :value="7">7 {{$L('天')}}</Option>
@@ -77,31 +72,26 @@ export default {
             secretVisible: false,
             tokens: [],
             projects: [],
-            scopes: [],
             created: {},
             form: this.defaultForm(),
         }
     },
     computed: {
-        hasWriteScope() {
-            return this.form.scopes.some(scope => ['task:comment', 'task:update', 'task:status'].includes(scope))
-        },
     },
     mounted() {
         this.loadData()
     },
     methods: {
         defaultForm() {
-            return {name: '', project_ids: [], scopes: ['project:read', 'task:read'], days: 30}
+            return {name: '', project_ids: [], days: 30}
         },
         loadData() {
             this.loading = true
             Promise.all([
-                this.$store.dispatch('call', {url: 'automation-token/lists'}),
+                this.$store.dispatch('call', {url: 'token/lists'}),
                 this.$store.dispatch('call', {url: 'project/lists', data: {getstatistics: 'no'}}),
             ]).then(([tokenRes, projectRes]) => {
                 this.tokens = tokenRes.data.list
-                this.scopes = tokenRes.data.scopes
                 this.projects = projectRes.data.data
             }).catch(({msg}) => $A.modalError(msg)).finally(() => this.loading = false)
         },
@@ -110,14 +100,15 @@ export default {
             this.createVisible = true
         },
         createToken() {
-            if (!this.form.name || !this.form.project_ids.length || !this.form.scopes.length) {
-                $A.messageWarning('请填写名称并选择项目和权限范围')
+            if (!this.form.name || !this.form.project_ids.length) {
+                $A.messageWarning('请填写名称并选择项目')
                 return
             }
             const expires = new Date(Date.now() + this.form.days * 86400000).toISOString()
             this.submitting = true
             this.$store.dispatch('call', {
-                url: 'automation-token/create',
+                url: 'token/create',
+                method: 'post',
                 data: {...this.form, expires_at: expires},
             }).then(({data}) => {
                 this.created = data
@@ -127,7 +118,7 @@ export default {
             }).catch(({msg}) => $A.modalError(msg)).finally(() => this.submitting = false)
         },
         disableToken(token) {
-            this.confirmAction(token, '禁用令牌', '禁用后使用该令牌的自动化工具将立即无法访问。', 'automation-token/disable')
+            this.confirmAction(token, '禁用令牌', '禁用后使用该令牌的自动化工具将立即无法访问。', 'token/disable')
         },
         rotateToken(token) {
             $A.modalConfirm({
@@ -135,7 +126,8 @@ export default {
                 content: '轮换后旧 Secret Key 将立即失效，是否继续？',
                 loading: true,
                 onOk: () => this.$store.dispatch('call', {
-                    url: 'automation-token/rotate',
+                    url: 'token/rotate',
+                    method: 'post',
                     data: {id: token.id},
                 }).then(({data, msg}) => {
                     this.created = data
@@ -146,10 +138,10 @@ export default {
             })
         },
         deleteToken(token) {
-            this.confirmAction(token, '删除令牌', '删除后无法恢复，使用该令牌的自动化工具将立即无法访问。', 'automation-token/delete')
+            this.confirmAction(token, '删除令牌', '删除后无法恢复，使用该令牌的自动化工具将立即无法访问。', 'token/delete')
         },
         confirmAction(token, title, content, url) {
-            $A.modalConfirm({title, content, loading: true, onOk: () => this.$store.dispatch('call', {url, data: {id: token.id}}).then(({msg}) => {
+            $A.modalConfirm({title, content, loading: true, onOk: () => this.$store.dispatch('call', {url, method: 'post', data: {id: token.id}}).then(({msg}) => {
                 this.loadData()
                 return msg
             })})
@@ -179,7 +171,6 @@ export default {
     .token-ak, .token-meta { overflow-wrap: anywhere; color: #777; line-height: 22px; }
     .token-ak { color: #333; font-family: monospace; }
     .token-actions { display: flex; gap: 8px; }
-    .scope-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .secret-row { margin-top: 16px; }
     .secret-row > span { display: block; margin-bottom: 6px; font-weight: 600; }
 }
@@ -187,7 +178,6 @@ export default {
     .setting-automation-token {
         .token-item { align-items: stretch; flex-direction: column; }
         .token-actions { justify-content: flex-end; }
-        .scope-list { grid-template-columns: 1fr; }
     }
 }
 </style>
