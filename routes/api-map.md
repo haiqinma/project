@@ -2,7 +2,7 @@
 
 > 此文件由 `php artisan doc:api-map` 生成，勿手改。
 
-接口总数：333
+接口总数：325
 
 ## 路由规则
 
@@ -12,29 +12,16 @@ API 使用动态路由（见 `routes/web.php`），URL 段映射为控制器方�
 - `api/{controller}/{method}/{action}` → `{method}__{action}()`（双下划线连接），如 `api/project/invite/join` → `ProjectController::invite__join()`
 - 路由最多两段，方法名最多一个双下划线
 
-## automation（AutomationController）
+## token（AutomationTokenController）
 
 | URL | 方法名 | HTTP | 说明 |
 | --- | --- | --- | --- |
-| api/automation/project/lists | project__lists() | get | 获取授权项目列表 |
-| api/automation/task/lists | task__lists() | get | 获取授权任务列表 |
-| api/automation/task/detail | task__detail() | get | 获取授权任务详情 |
-| api/automation/task/comment | task__comment() | post | 追加任务评论 |
-| api/automation/task/update | task__update() | post | 更新任务普通字段 |
-| api/automation/task/status | task__status() | post | 更新任务状态 |
-| api/automation/file/download | file__download() | get | 获取授权文件下载信息 |
-| api/automation/file/content | file__content() | get | 下载授权文件内容 |
-
-## automation-token（AutomationTokenController）
-
-| URL | 方法名 | HTTP | 说明 |
-| --- | --- | --- | --- |
-| api/automation-token/lists | lists() | get | 获取访问令牌 |
-| api/automation-token/create | create() | post | 创建访问令牌 |
-| api/automation-token/disable | disable() | post | 禁用访问令牌 |
-| api/automation-token/delete | delete() | post | 删除访问令牌 |
-| api/automation-token/rotate | rotate() | post | 轮换访问密钥 |
-| api/automation-token/admin/audits | admin__audits() | get | 获取自动化访问审计 |
+| api/token/lists | lists() | get | 获取访问令牌 |
+| api/token/create | create() | post | 创建访问令牌 |
+| api/token/disable | disable() | post | 禁用访问令牌 |
+| api/token/delete | delete() | post | 删除访问令牌 |
+| api/token/rotate | rotate() | post | 轮换访问密钥 |
+| api/token/admin/audits | admin__audits() | get | 获取访问令牌审计 |
 
 ## users（UsersController）
 

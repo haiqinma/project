@@ -103,7 +103,7 @@ export default {
                 menu.push(...[
                     {path: 'system', name: '系统设置', divided: true},
                     {path: 'license', name: 'License Key'},
-                    {path: 'automation-audit', name: '自动化访问审计'},
+                    {path: 'automation-audit', name: '访问令牌审计'},
                 ])
             }
             menu.push(...[

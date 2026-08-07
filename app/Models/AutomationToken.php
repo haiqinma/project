@@ -23,11 +23,6 @@ class AutomationToken extends AbstractModel
         return $this->belongsTo(User::class, 'userid', 'userid');
     }
 
-    public function hasScope(string $scope): bool
-    {
-        return in_array($scope, $this->scopes ?: [], true);
-    }
-
     public function getScopesAttribute($value): array
     {
         return $this->decodeArrayAttribute($value);

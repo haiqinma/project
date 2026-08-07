@@ -14,7 +14,7 @@ use Request;
 
 class AutomationTokenController extends AbstractController
 {
-    /** @api {get} api/automation-token/lists 获取访问令牌 */
+    /** @api {get} api/token/lists 获取访问令牌 */
     public function lists()
     {
         $this->requireMethod('GET');
@@ -36,26 +36,21 @@ class AutomationTokenController extends AbstractController
                 ])->values();
                 return $data;
             }),
-            'scopes' => AutomationTokenService::SCOPES,
         ]);
     }
 
-    /** @api {post} api/automation-token/create 创建访问令牌 */
+    /** @api {post} api/token/create 创建访问令牌 */
     public function create()
     {
         $this->requireMethod('POST');
         $user = User::auth();
         AutomationTokenService::authorizeCreation($user, request());
         $name = trim((string) Request::input('name'));
-        $scopes = array_values(array_unique((array) Request::input('scopes', [])));
         $projectIds = array_values(array_unique(array_map('intval', (array) Request::input('project_ids', []))));
         $expiresAt = Carbon::parse((string) Request::input('expires_at', now()->addDays(30)));
 
         if ($name === '' || mb_strlen($name) > 100) {
             throw new ApiException('令牌名称不能为空且不能超过100个字符');
-        }
-        if (!$scopes || array_diff($scopes, AutomationTokenService::SCOPES)) {
-            throw new ApiException('请选择有效的权限范围');
         }
         if (!$projectIds || Project::authData($user->userid)->whereIn('projects.id', $projectIds)->count() !== count($projectIds)) {
             throw new ApiException('请选择当前用户参与的有效项目');
@@ -64,7 +59,7 @@ class AutomationTokenController extends AbstractController
             throw new ApiException('令牌有效期必须在90天以内');
         }
 
-        $issued = AutomationTokenService::issue($user->userid, $name, $scopes, $projectIds, $expiresAt);
+        $issued = AutomationTokenService::issue($user->userid, $name, $projectIds, $expiresAt);
         return Base::retSuccess('创建成功', [
             'id' => $issued['token']->id,
             'access_key' => $issued['token']->access_key,
@@ -72,21 +67,21 @@ class AutomationTokenController extends AbstractController
         ]);
     }
 
-    /** @api {post} api/automation-token/disable 禁用访问令牌 */
+    /** @api {post} api/token/disable 禁用访问令牌 */
     public function disable()
     {
         $this->requireMethod('POST');
         return $this->revoke(false);
     }
 
-    /** @api {post} api/automation-token/delete 删除访问令牌 */
+    /** @api {post} api/token/delete 删除访问令牌 */
     public function delete()
     {
         $this->requireMethod('POST');
         return $this->revoke(true);
     }
 
-    /** @api {post} api/automation-token/rotate 轮换访问密钥 */
+    /** @api {post} api/token/rotate 轮换访问密钥 */
     public function rotate()
     {
         $this->requireMethod('POST');
@@ -104,7 +99,7 @@ class AutomationTokenController extends AbstractController
         ]);
     }
 
-    /** @api {get} api/automation-token/admin/audits 获取自动化访问审计 */
+    /** @api {get} api/token/admin/audits 获取访问令牌审计 */
     public function admin__audits()
     {
         $this->requireMethod('GET');

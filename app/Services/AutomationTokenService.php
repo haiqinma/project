@@ -7,14 +7,10 @@ use App\Exceptions\ApiException;
 use App\Models\AutomationToken;
 use App\Models\AutomationTokenAudit;
 use App\Models\AutomationTokenNonce;
-use App\Models\AbstractModel;
 use App\Models\ProjectUser;
 use App\Models\ProjectTask;
-use App\Models\ProjectPermission;
-use App\Models\Project;
+use App\Models\ProjectTaskFile;
 use App\Models\User;
-use App\Models\WebSocketDialog;
-use App\Models\WebSocketDialogMsg;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -22,16 +18,7 @@ use Illuminate\Database\QueryException;
 
 class AutomationTokenService
 {
-    public const SCOPES = [
-        'project:read',
-        'task:read',
-        'task:comment',
-        'task:update',
-        'task:status',
-        'file:read',
-    ];
-
-    public static function issue(int $userid, string $name, array $scopes, array $projectIds, Carbon $expiresAt): array
+    public static function issue(int $userid, string $name, array $projectIds, Carbon $expiresAt): array
     {
         $secret = 'yysk_' . bin2hex(random_bytes(24));
         $token = AutomationToken::createInstance([
@@ -39,7 +26,9 @@ class AutomationTokenService
             'access_key' => 'yyak_' . bin2hex(random_bytes(12)),
             'secret_hash' => hash('sha256', $secret),
             'name' => $name,
-            'scopes' => array_values($scopes),
+            // Kept for database compatibility. Authorization is now defined by project
+            // scope plus the token owner's existing Project permissions.
+            'scopes' => [],
             'project_ids' => array_values(array_map('intval', $projectIds)),
             'expires_at' => $expiresAt,
             'status' => AutomationToken::STATUS_ACTIVE,
@@ -58,7 +47,7 @@ class AutomationTokenService
         }
         $instance = app($authorizer);
         if (!$instance instanceof AutomationTokenCreationAuthorizer) {
-            throw new \LogicException('自动化令牌创建授权器配置无效');
+            throw new \LogicException('访问令牌创建授权器配置无效');
         }
         $instance->authorize($user, $request);
     }
@@ -88,24 +77,24 @@ class AutomationTokenService
 
         if (!$token || $token->status !== AutomationToken::STATUS_ACTIVE || !$timestamp || !$nonce || !$signature) {
             self::audit($token, 'auth.verify', 'invalid_credentials', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
         if ($token->expires_at->isPast()) {
             $token->updateInstance(['status' => AutomationToken::STATUS_EXPIRED]);
             $token->save();
             self::audit($token, 'auth.verify', 'expired', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
         try {
             $requestTime = Carbon::parse($timestamp);
         } catch (\Throwable) {
             self::audit($token, 'auth.verify', 'invalid_timestamp', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
         $window = (int) config('dootask.automation_token_time_window', 300);
         if (abs($requestTime->diffInSeconds(now(), false)) > $window) {
             self::audit($token, 'auth.verify', 'invalid_timestamp', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
         $canonical = implode("\n", [
             strtoupper($request->method()),
@@ -118,14 +107,14 @@ class AutomationTokenService
         $expected = hash_hmac('sha256', $canonical, $token->secret_hash);
         if (!hash_equals($expected, $signature)) {
             self::audit($token, 'auth.verify', 'invalid_signature', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
 
         $rateKey = "automation_token_rate:{$token->id}";
         $rateLimit = max(1, (int) config('dootask.automation_token_rate_per_minute', 60));
         if (RateLimiter::tooManyAttempts($rateKey, $rateLimit)) {
             self::audit($token, 'auth.verify', 'rate_limited', $request);
-            throw new ApiException('自动化访问请求过于频繁');
+            throw new ApiException('访问令牌请求过于频繁');
         }
         RateLimiter::hit($rateKey, 60);
 
@@ -147,12 +136,12 @@ class AutomationTokenService
                 throw $e;
             }
             self::audit($token, 'auth.verify', 'replayed_nonce', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
         $user = User::whereUserid($token->userid)->whereNull('disable_at')->first();
         if (!$user) {
             self::audit($token, 'auth.verify', 'invalid_user', $request);
-            throw new ApiException('自动化访问认证失败');
+            throw new ApiException('访问令牌认证失败');
         }
 
         $token->updateInstance(['last_used_at' => now(), 'last_used_ip' => $request->ip()]);
@@ -162,82 +151,73 @@ class AutomationTokenService
         return $token;
     }
 
-    public static function authorizeProject(AutomationToken $token, int $projectId, string $scope): void
+    /**
+     * 标准业务 API 的令牌边界：复用所属用户原有权限，并限制在令牌项目范围内。
+     */
+    public static function authorizeStandardRequest(AutomationToken $token, Request $request): void
     {
-        if (!$token->hasScope($scope) || !$token->allowsProject($projectId) ||
-            !ProjectUser::whereProjectId($projectId)->whereUserid($token->userid)->exists()) {
-            self::audit($token, 'authorization.verify', 'forbidden', request(), 'project', $projectId);
-            throw new ApiException('自动化访问权限不足');
+        $path = trim($request->path(), '/');
+        if (!str_starts_with($path, 'api/')) {
+            self::forbidStandardRequest($token, $request);
         }
+        $resource = substr($path, 4);
+        if ($resource === 'project/lists') {
+            RequestContext::save('access_token_project_ids', $token->project_ids);
+            return;
+        }
+        if (str_starts_with($resource, 'project/')) {
+            $projectId = self::standardRequestProjectId($request);
+            if ($projectId > 0) {
+                self::authorizeProjectMembership($token, $projectId, $request);
+                return;
+            }
+        }
+        if (in_array($resource, ['dialog/msg/list', 'dialog/msg/sendtext'], true)) {
+            $dialogId = intval($request->input('dialog_id'));
+            $projectId = $dialogId > 0 ? intval(ProjectTask::whereDialogId($dialogId)->value('project_id')) : 0;
+            if ($projectId > 0) {
+                self::authorizeProjectMembership($token, $projectId, $request);
+                return;
+            }
+        }
+        self::forbidStandardRequest($token, $request);
     }
 
-    public static function appendTaskComment(AutomationToken $token, ProjectTask $task, string $content): array
+    private static function standardRequestProjectId(Request $request): int
     {
-        if ($task->parent_id > 0) {
-            throw new ApiException('当前任务暂不支持追加评论');
+        $projectId = intval($request->input('project_id'));
+        if ($projectId > 0) {
+            return $projectId;
         }
-        if (!$task->dialog_id) {
-            AbstractModel::transaction(function () use ($task) {
-                $task->lockForUpdate();
-                if (!$task->dialog_id) {
-                    $dialog = WebSocketDialog::createGroup($task->name, $task->relationUserids(), 'task');
-                    if (!$dialog) {
-                        throw new ApiException('创建任务会话失败');
-                    }
-                    $task->dialog_id = $dialog->id;
-                    $task->save();
-                }
-            });
+        $taskId = intval($request->input('task_id'));
+        if ($taskId > 0) {
+            return intval(ProjectTask::whereId($taskId)->value('project_id'));
         }
-        $result = WebSocketDialogMsg::sendMsg(null, $task->dialog_id, 'text', [
-            'type' => 'text',
-            'text' => e($content),
-        ], $token->userid);
-        self::audit($token, 'task.comment', 'success', request(), 'task', $task->id);
-        $data = $result['data'] ?? [];
-        return $data instanceof WebSocketDialogMsg ? $data->toArray() : (array) $data;
+        $fileId = intval($request->input('file_id'));
+        if ($fileId > 0) {
+            $file = ProjectTaskFile::whereId($fileId)->first(['project_id', 'task_id']);
+            if ($file) {
+                $projectId = intval($file->project_id);
+                return $projectId > 0
+                    ? $projectId
+                    : intval(ProjectTask::whereId($file->task_id)->value('project_id'));
+            }
+        }
+        return 0;
     }
 
-    public static function updateTask(AutomationToken $token, ProjectTask $task, array $input): array
+    private static function authorizeProjectMembership(AutomationToken $token, int $projectId, Request $request): void
     {
-        $allowed = ['name', 'content', 'color', 'task_tag', 'p_level', 'p_name', 'p_color', 'times'];
-        $params = array_intersect_key($input, array_flip($allowed));
-        if (!$params) {
-            throw new ApiException('没有可更新的任务字段');
+        if ($token->allowsProject($projectId) && ProjectUser::whereProjectId($projectId)->whereUserid($token->userid)->exists()) {
+            return;
         }
-        $params['task_id'] = $task->id;
-        $permission = array_key_exists('times', $params) ? ProjectPermission::TASK_TIME : ProjectPermission::TASK_UPDATE;
-        ProjectPermission::userTaskPermission(Project::userProject($task->project_id), $permission, $task);
-        $params = ProjectTask::normalizeTimes($params, $task);
-        $updateMarking = [];
-        $task->updateTask($params, $updateMarking);
-        $data = ProjectTask::oneTask($task->id)->toArray();
-        $data['update_marking'] = $updateMarking ?: json_decode('{}');
-        $task->pushMsg('update', $data);
-        self::audit($token, 'task.update', 'success', request(), 'task', $task->id);
-        return $data;
+        self::forbidStandardRequest($token, $request, 'project', $projectId);
     }
 
-    public static function updateTaskStatus(AutomationToken $token, ProjectTask $task, array $input): array
+    private static function forbidStandardRequest(AutomationToken $token, Request $request, ?string $resourceType = null, ?int $resourceId = null): never
     {
-        $params = ['task_id' => $task->id];
-        if (array_key_exists('flow_item_id', $input)) {
-            $params['flow_item_id'] = intval($input['flow_item_id']);
-        }
-        if (array_key_exists('completed', $input)) {
-            $params['complete_at'] = filter_var($input['completed'], FILTER_VALIDATE_BOOLEAN) ? now()->toDateTimeString() : false;
-        }
-        if (count($params) === 1) {
-            throw new ApiException('请选择任务状态或完成状态');
-        }
-        ProjectPermission::userTaskPermission(Project::userProject($task->project_id), ProjectPermission::TASK_STATUS, $task);
-        $updateMarking = [];
-        $task->updateTask($params, $updateMarking);
-        $data = ProjectTask::oneTask($task->id)->toArray();
-        $data['update_marking'] = $updateMarking ?: json_decode('{}');
-        $task->pushMsg('update', $data);
-        self::audit($token, 'task.status', 'success', request(), 'task', $task->id);
-        return $data;
+        self::audit($token, 'authorization.verify', 'forbidden', $request, $resourceType, $resourceId);
+        throw new ApiException('访问令牌无权调用此接口');
     }
 
     public static function audit(?AutomationToken $token, string $action, string $result, ?Request $request = null, ?string $resourceType = null, ?int $resourceId = null): void
