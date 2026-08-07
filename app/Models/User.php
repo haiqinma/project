@@ -779,6 +779,10 @@ class User extends AbstractModel
      */
     private static function authInfo()
     {
+        $tokenUser = request()?->attributes?->get('access_token_user');
+        if ($tokenUser instanceof self) {
+            return RequestContext::save('auth', $tokenUser);
+        }
         if (RequestContext::has('auth')) {
             // 缓存
             return RequestContext::get('auth');
