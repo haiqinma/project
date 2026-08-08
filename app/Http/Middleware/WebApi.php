@@ -30,15 +30,15 @@ class WebApi
         // 更新请求的基本URL
         RequestContext::updateBaseUrl($request);
 
+        // 加载Doo类
+        Doo::load();
+
         // AK/SK 是当前用户的另一种认证方式；后续控制器仍通过 User::auth()
         // 和既有业务权限处理请求，不区分 Web 或自动化客户端。
         if ($request->header('X-YY-AK')) {
             $token = AutomationTokenService::authenticate($request);
             AutomationTokenService::authorizeStandardRequest($token, $request);
         }
-
-        // 加载Doo类
-        Doo::load();
 
         // 记录 PC 端活跃时间
         $userid = Doo::userId();

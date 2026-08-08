@@ -297,7 +297,7 @@ class PassportController extends AbstractController
         return Base::retSuccess('success', $user);
     }
 
-    private function nodeRequest(string $method, string $path, array $payload = []): array
+    protected function nodeRequest(string $method, string $path, array $payload = []): array
     {
         $baseUrl = $this->nodeBaseUrl();
         if ($baseUrl === '') {

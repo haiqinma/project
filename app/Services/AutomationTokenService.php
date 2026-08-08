@@ -147,6 +147,7 @@ class AutomationTokenService
         $token->updateInstance(['last_used_at' => now(), 'last_used_ip' => $request->ip()]);
         $token->save();
         $request->attributes->set('automation_token', $token);
+        $request->attributes->set('access_token_user', $user);
         RequestContext::save('auth', $user);
         return $token;
     }
