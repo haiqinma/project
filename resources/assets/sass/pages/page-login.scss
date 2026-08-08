@@ -89,6 +89,15 @@
                 align-items: center;
                 justify-content: center;
                 margin: 40px auto 35px;
+                .login-qrcode-frame {
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 208px;
+                    height: 208px;
+                    cursor: pointer;
+                }
                 .login-qrcode-status {
                     margin: 14px 32px 0;
                     min-height: 20px;
@@ -96,6 +105,15 @@
                     font-size: 13px;
                     line-height: 20px;
                     text-align: center;
+                }
+                .login-passport-local {
+                    margin-top: 8px;
+                    text-align: center;
+                    .ivu-btn-text {
+                        height: 28px;
+                        padding: 0;
+                        color: $primary-color;
+                    }
                 }
             }
             .login-access {
