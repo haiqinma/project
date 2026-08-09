@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Api\PassportController;
+use App\Models\User;
 use App\Module\Base;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -51,6 +52,7 @@ class PassportLoginFlowTest extends TestCase
         $this->assertSame('POST', $request['method']);
         $this->assertSame('/api/v1/public/auth/passport/authorize/request', $request['path']);
         $this->assertSame('S256', $request['payload']['codeChallengeMethod']);
+        $this->assertSame(['identity.basic', 'identity.email', 'identity.wallet'], $request['payload']['scopes']);
         $this->assertSame($result['data']['session_id'], $request['payload']['state']);
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/', $request['payload']['codeChallenge']);
 
@@ -108,6 +110,33 @@ class PassportLoginFlowTest extends TestCase
         $cached = Cache::get($this->cacheKey($sessionId));
         $this->assertSame('authorization-code', $cached['authorization_code']);
         $this->assertSame('approved', $cached['status']);
+    }
+
+    public function test_verified_passport_email_claim_fills_placeholder_project_email(): void
+    {
+        $controller = new TestPassportController();
+        $method = new \ReflectionMethod(PassportController::class, 'applyPassportEmailClaim');
+        $method->setAccessible(true);
+
+        $user = new User();
+        $user->email = 'wallet-user@wallet.yeying.local';
+        $user->email_verity = 0;
+        $method->invoke($controller, $user, [
+            'email' => 'Person@Example.com',
+            'emailVerified' => true,
+        ]);
+        $this->assertSame('person@example.com', $user->email);
+        $this->assertSame(1, $user->email_verity);
+
+        $existing = new User();
+        $existing->email = 'local@example.com';
+        $existing->email_verity = 1;
+        $method->invoke($controller, $existing, [
+            'email' => 'other@example.com',
+            'emailVerified' => true,
+        ]);
+        $this->assertSame('local@example.com', $existing->email);
+        $this->assertSame(1, $existing->email_verity);
     }
 
     private function cacheKey(string $sessionId): string

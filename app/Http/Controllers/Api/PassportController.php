@@ -52,6 +52,7 @@ class PassportController extends AbstractController
             'state' => $sessionId,
             'codeChallenge' => $codeChallenge,
             'codeChallengeMethod' => 'S256',
+            'scopes' => $this->scope(),
             'requestTtlMs' => self::SESSION_TTL_SECONDS * 1000,
         ];
 
@@ -255,7 +256,8 @@ class PassportController extends AbstractController
 
     private function loginByPassportIdentity(array $identity): array
     {
-        $address = strtolower(trim((string)($identity['walletAddress'] ?? '')));
+        $claims = is_array($identity['claims'] ?? null) ? $identity['claims'] : [];
+        $address = strtolower(trim((string)($claims['walletAddress'] ?? $identity['walletAddress'] ?? '')));
         $chain = 'eip155';
         $chainId = trim((string)config('dootask.wallet_chain_id', '1'));
 
@@ -270,7 +272,7 @@ class PassportController extends AbstractController
         if (!$userWallet) {
             return Base::retError('该通行证尚未绑定 Project 账号，请先使用邮箱账号登录后绑定钱包', [
                 'code' => 'passport_wallet_unbound',
-                'address' => $address,
+                'address_display' => $this->maskWalletAddress($address),
                 'chain_id' => $chainId,
             ]);
         }
@@ -279,6 +281,7 @@ class PassportController extends AbstractController
         if (!$user || $user->disable_at) {
             return Base::retError('通行证绑定的账号不可用', ['code' => 'passport_user_disabled']);
         }
+        $this->applyPassportEmailClaim($user, $claims);
         if (!$user->email || str_ends_with($user->email, '@wallet.yeying.local') || intval($user->email_verity) !== 1) {
             return Base::retError('请先设置并验证邮箱', ['code' => 'wallet_email_required']);
         }
@@ -295,6 +298,22 @@ class PassportController extends AbstractController
         User::generateToken($user, true);
 
         return Base::retSuccess('success', $user);
+    }
+
+    private function applyPassportEmailClaim(User $user, array $claims): void
+    {
+        $email = strtolower(trim((string)($claims['email'] ?? '')));
+        $verified = filter_var($claims['emailVerified'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if (!$verified || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return;
+        }
+        $current = strtolower(trim((string)$user->email));
+        if ($current === '' || str_ends_with($current, '@wallet.yeying.local') || $current === $email) {
+            $user->updateInstance([
+                'email' => $email,
+                'email_verity' => 1,
+            ]);
+        }
     }
 
     protected function nodeRequest(string $method, string $path, array $payload = []): array
@@ -367,7 +386,21 @@ class PassportController extends AbstractController
     private function scope(): array
     {
         $scope = trim((string)config('dootask.passport_scope', 'openid profile wallet'));
-        return array_values(array_filter(preg_split('/\s+/', $scope) ?: []));
+        $aliases = [
+            'openid' => 'identity.basic',
+            'profile' => 'identity.email',
+            'email' => 'identity.email',
+            'wallet' => 'identity.wallet',
+        ];
+        $values = [];
+        foreach (preg_split('/\s+/', $scope) ?: [] as $item) {
+            $item = trim((string)$item);
+            if ($item === '') {
+                continue;
+            }
+            $values[] = $aliases[$item] ?? $item;
+        }
+        return array_values(array_unique($values));
     }
 
     private function callbackUrl(): string
@@ -390,6 +423,15 @@ class PassportController extends AbstractController
     private function sessionCacheKey(string $sessionId): string
     {
         return 'passport_login_session:' . hash('sha256', $sessionId);
+    }
+
+    private function maskWalletAddress(string $address): string
+    {
+        $value = trim($address);
+        if (strlen($value) <= 12) {
+            return $value;
+        }
+        return substr($value, 0, 6) . '...' . substr($value, -4);
     }
 
     private function callbackHtml(string $sessionId): string
