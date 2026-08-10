@@ -25,7 +25,7 @@ negative:
   - 不要手动 rm public/uploads/ 下的文件，会导致已上传附件 404
   - 不要清空数据库表，应通过任务回收站、消息删除等业务操作清理
   - mysql 日志（binlog）不在自动备份里，需另行处理
-last_verified: v0.0.1
+last_verified: v0.0.2
 ---
 
 # 磁盘占满 / YeYing 数据目录变大怎么办
@@ -52,6 +52,7 @@ Project 可设置 `FILE_STORAGE_DISK=s3` 将持久化上传写入 Warehouse S3 �
 - `uploads/tmp/` 和 `uploads/desktop-draft/` 是本地临时目录，不迁移到 S3，也不能作为业务数据引用。
 - S3 模式下，预览、下载、图片处理、压缩打包需要本地路径时，只使用 `storage/app/tmp` 下的一次性临时文件，不恢复到 `public/uploads`。
 - 不要在同一实例中长期保留“一部分本地、一部分 S3”的混合状态。
+- 外部 Nginx 若用正则规则直接处理图片、JS、CSS 等静态文件，必须为 `/uploads/` 设置更高优先级的 location，并在本地文件不存在时回退 LaravelS；否则 S3 中存在的聊天图片和附件会被 Nginx 直接返回 404。
 
 ## 迁移历史持久化文件
 从本地切换到 S3 必须先迁移历史持久化文件，不能只改 `.env`。管理员应先执行检查命令：
