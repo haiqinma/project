@@ -15,6 +15,8 @@ CONFIG="${HEALTH_CONFIG:-$PROJECT_DIR/.env}"
 PID_FILE="${PROJECT_HEALTH_PID_FILE:-${YEYING_RUN_DIR:-$PROJECT_DIR/run}/yeying.pid}"
 QUIET=false
 VERBOSE=false
+LOGFILE=""
+LOG_ENABLED=false
 
 CHECK_NAMES=()
 CHECK_STATUSES=()
@@ -26,6 +28,65 @@ FAILED=0
 SKIPPED=0
 HAD_TIMEOUT=false
 HAD_FRAMEWORK_ERROR=false
+
+init_log_file() {
+  local logfile_name=$1
+  local logfile_dir="/opt/logs"
+
+  LOGFILE="${logfile_dir}/${logfile_name}"
+  if ! mkdir -p "$logfile_dir" 2>/dev/null || ! touch "$LOGFILE" 2>/dev/null; then
+    printf 'health-check: unable to write log file: %s\n' "$LOGFILE" >&2
+    LOGFILE=""
+    LOG_ENABLED=false
+    return 0
+  fi
+  LOG_ENABLED=true
+
+  local filesize=0
+  filesize=$(stat -c "%s" "$LOGFILE" 2>/dev/null || echo 0)
+  if [[ "$filesize" -ge 1048576 ]]; then
+    printf 'clear old logs at %s to avoid log file too big\n' "$(date)" > "$LOGFILE"
+  fi
+}
+
+log() {
+  local message="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  if [[ "$LOG_ENABLED" == false ]]; then
+    [[ "${FORMAT:-text}" == json ]] || printf '%b\n' "$message"
+  elif [[ "${FORMAT:-text}" == json ]]; then
+    printf '%b\n' "$message" >> "$LOGFILE"
+  else
+    echo -e "$message" | tee -a "$LOGFILE"
+  fi
+}
+
+log_file() {
+  if [[ "$LOG_ENABLED" == true ]]; then
+    printf '[%s] %b\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOGFILE"
+  fi
+}
+
+log_err() {
+  if [[ "$LOG_ENABLED" == true ]]; then
+    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOGFILE" >&2
+  else
+    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
+  fi
+}
+
+finish_health_check() {
+  local exit_code=$?
+  set +e
+  if [[ "$exit_code" -eq 0 ]]; then
+    log "health check finished: passed, exit_code=${exit_code}"
+  else
+    log_err "health check finished: failed, exit_code=${exit_code}"
+  fi
+  exit "$exit_code"
+}
+
+init_log_file "health-check-project.log"
+trap finish_health_check EXIT
 
 usage() {
   cat <<'EOF'
@@ -50,12 +111,13 @@ EOF
 }
 
 usage_error() {
-  printf 'health-check: %s\nTry --help for usage.\n' "$1" >&2
+  log_err "health-check: $1"
+  printf 'Try --help for usage.\n' >&2
   exit 2
 }
 
 framework_error() {
-  printf 'health-check: %s\n' "$1" >&2
+  log_err "health-check: $1"
   exit 3
 }
 
@@ -106,6 +168,8 @@ if [[ -z "$BASE_URL" ]]; then
 fi
 BASE_URL="${BASE_URL%/}"
 
+log "health check start: level=${LEVEL}, timeout=${TIMEOUT}, retries=${RETRIES}, interval=${INTERVAL}, format=${FORMAT}, base_url=${BASE_URL}, config=${CONFIG}"
+
 now_ms() { php -r 'echo (int) floor(microtime(true) * 1000);'; }
 
 STARTED_AT="$(php -r 'echo gmdate("Y-m-d\\TH:i:s\\Z");')"
@@ -125,8 +189,11 @@ add_result() {
   message="$(sanitize_message "$4")"
   CHECK_NAMES+=("$name"); CHECK_STATUSES+=("$status"); CHECK_DURATIONS+=("$duration"); CHECK_MESSAGES+=("$message")
   case "$status" in pass) PASSED=$((PASSED + 1));; warn) WARNED=$((WARNED + 1));; fail) FAILED=$((FAILED + 1));; skip) SKIPPED=$((SKIPPED + 1));; esac
+  local result_line="[$(printf '%s' "$status" | tr '[:lower:]' '[:upper:]')] $name: $message ($duration ms)"
   if [[ "$FORMAT" == text && "$QUIET" == false ]]; then
-    printf '[%s] %s: %s (%s ms)\n' "$(printf '%s' "$status" | tr '[:lower:]' '[:upper:]')" "$name" "$message" "$duration"
+    log "$result_line"
+  else
+    log_file "$result_line"
   fi
 }
 
@@ -140,7 +207,7 @@ retry_check() {
     [[ "$rc" -eq 124 || "$rc" -eq 28 ]] && HAD_TIMEOUT=true
     [[ "$rc" -eq 3 ]] && HAD_FRAMEWORK_ERROR=true
     if (( attempt < max_attempts )); then
-      [[ "$VERBOSE" == true ]] && printf 'Retrying %s (%d/%d): %s\n' "$name" "$attempt" "$max_attempts" "$(sanitize_message "$output")" >&2
+      [[ "$VERBOSE" == true ]] && log_err "Retrying $name ($attempt/$max_attempts): $(sanitize_message "$output")"
       sleep "$INTERVAL"
     fi
   done
@@ -193,8 +260,9 @@ END_MS="$(now_ms)"; DURATION_MS=$((END_MS - START_MS))
 if (( FAILED > 0 )); then STATUS=fail; elif (( WARNED > 0 )); then STATUS=warn; else STATUS=pass; fi
 
 if [[ "$FORMAT" == text ]]; then
-  printf 'RESULT status=%s passed=%d warned=%d failed=%d skipped=%d duration_ms=%d\n' "$STATUS" "$PASSED" "$WARNED" "$FAILED" "$SKIPPED" "$DURATION_MS"
+  log "RESULT status=${STATUS} passed=${PASSED} warned=${WARNED} failed=${FAILED} skipped=${SKIPPED} duration_ms=${DURATION_MS}"
 else
+  log "RESULT status=${STATUS} passed=${PASSED} warned=${WARNED} failed=${FAILED} skipped=${SKIPPED} duration_ms=${DURATION_MS}"
   export HC_PROJECT=project HC_VERSION="$VERSION" HC_ENVIRONMENT="$ENVIRONMENT" HC_LEVEL="$LEVEL" HC_STATUS="$STATUS"
   export HC_STARTED_AT="$STARTED_AT" HC_DURATION_MS="$DURATION_MS" HC_PASSED="$PASSED" HC_WARNED="$WARNED" HC_FAILED="$FAILED" HC_SKIPPED="$SKIPPED"
   args=(); for ((i = 0; i < ${#CHECK_NAMES[@]}; i++)); do args+=("${CHECK_NAMES[$i]}" "${CHECK_STATUSES[$i]}" "${CHECK_DURATIONS[$i]}" "${CHECK_MESSAGES[$i]}"); done
