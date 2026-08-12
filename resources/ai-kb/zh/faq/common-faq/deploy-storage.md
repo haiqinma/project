@@ -51,6 +51,7 @@ Project 可设置 `FILE_STORAGE_DISK=s3` 将持久化上传写入 Warehouse S3 �
 - `FILE_STORAGE_DISK=local` 时，持久化文件只以 `public/uploads` 为准；`FILE_STORAGE_DISK=s3` 时，持久化文件只以 S3 bucket/prefix 为准。
 - `uploads/tmp/` 和 `uploads/desktop-draft/` 是本地临时目录，不迁移到 S3，也不能作为业务数据引用。
 - S3 模式下，预览、下载、图片处理、压缩打包需要本地路径时，只使用 `storage/app/tmp` 下的一次性临时文件，不恢复到 `public/uploads`。
+- `.env` 的 `YEYING_RUNTIME_DIR` 可将临时上传、预览/打包中间文件、框架缓存/会话、日志与 PID 文件放到 release 目录外。默认 `.` 保持本机开发行为；生产应配置固定绝对路径，并在每个新 release 执行 `scripts/install.sh` 以迁移和创建链接。
 - 不要在同一实例中长期保留“一部分本地、一部分 S3”的混合状态。
 - 外部 Nginx 若用正则规则直接处理图片、JS、CSS 等静态文件，必须为 `/uploads/` 设置更高优先级的 location，并在本地文件不存在时回退 LaravelS；否则 S3 中存在的聊天图片和附件会被 Nginx 直接返回 404。
 
