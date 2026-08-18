@@ -8,7 +8,9 @@ use App\Models\UserEmailVerification;
 use App\Module\Base;
 use App\Module\Doo;
 use App\Services\Wallet\WalletSignatureService;
+use App\Services\Wallet\IdentityCredentialVerifier;
 use Carbon\Carbon;
+use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Request;
@@ -30,10 +32,27 @@ class WalletAuthController extends AbstractController
             'address' => $address,
             'chain_id' => $chainId,
         ], self::CHALLENGE_TTL);
+        $identity = null;
+        $identityScopes = $this->identityScopes(Request::input('identity_scopes', []));
+        if ($identityScopes) {
+            $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
+            $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+            $identity = $this->nodeIdentityRequest('/api/v1/public/identity/authorize/request', [
+                'appId' => config('dootask.passport_client_id'),
+                'redirectUri' => $this->identityCallbackUrl(),
+                'codeChallenge' => $challenge,
+                'codeChallengeMethod' => 'S256',
+                'scopes' => $identityScopes,
+            ]);
+            Cache::put($this->challengeKey($address, $chainId), array_merge(Cache::get($this->challengeKey($address, $chainId)), [
+                'identity' => ['request' => $identity, 'verifier' => $verifier, 'scopes' => $identityScopes],
+            ]), self::CHALLENGE_TTL);
+        }
         return Base::retSuccess('success', [
             'challenge' => $message,
             'nonce' => $nonce,
             'expires_at' => Carbon::now()->addSeconds(self::CHALLENGE_TTL)->toIso8601String(),
+            ...($identity ? ['identity_authorization' => $identity] : []),
         ]);
     }
 
@@ -51,7 +70,29 @@ class WalletAuthController extends AbstractController
         if ($recovered !== $address) {
             return Base::retError('钱包签名地址不匹配', ['code' => 'wallet_signature_mismatch']);
         }
+        $identityResult = null;
+        if (!empty($challenge['identity'])) {
+            $presentation = Request::input('identity_presentation');
+            if (!is_array($presentation)) return Base::retError('缺少钱包身份授权证明', ['code' => 'identity_presentation_required']);
+            $approved = $this->nodeIdentityRequest('/api/v1/public/identity/authorize/approve', [
+                'requestId' => $challenge['identity']['request']['requestId'], 'presentation' => $presentation,
+            ]);
+            $identityResult = $this->nodeIdentityRequest('/api/v1/public/identity/authorize/exchange', [
+                'code' => $approved['authorizationCode'],
+                'appId' => config('dootask.passport_client_id'),
+                'redirectUri' => $this->identityCallbackUrl(),
+                'codeVerifier' => $challenge['identity']['verifier'],
+            ]);
+            foreach (($identityResult['credentials'] ?? []) as $credential) {
+                $type = $credential['type'] ?? '';
+                if ($type === 'email') app(IdentityCredentialVerifier::class)->verify($credential['credential'] ?? '', $identityResult['did'], 'EmailCredential');
+                if ($type === 'username') app(IdentityCredentialVerifier::class)->verify($credential['credential'] ?? '', $identityResult['did'], 'UsernameCredential');
+            }
+        }
         $wallet = UserWallet::where('chain', 'eip155')->where('chain_id', $chainId)->where('address_normalized', $address)->first();
+        if ($identityResult) {
+            $wallet = UserWallet::where('wallet_identity_id', $identityResult['walletIdentityId'])->first() ?: $wallet;
+        }
         if (!$wallet) {
             $placeholder = 'wallet-' . substr(hash('sha256', $address . ':' . $chainId), 0, 24) . '@wallet.yeying.local';
             $user = User::whereEmail($placeholder)->first();
@@ -76,6 +117,9 @@ class WalletAuthController extends AbstractController
                 'chain_id' => $chainId,
                 'setup_token' => $setupToken,
             ]);
+        }
+        if ($identityResult && $wallet->wallet_identity_id !== $identityResult['walletIdentityId']) {
+            $wallet->update(['wallet_identity_id' => $identityResult['walletIdentityId']]);
         }
         $user = User::where('userid', $wallet->userid)->first();
         if (!$user || $user->disable_at) {
@@ -205,5 +249,29 @@ class WalletAuthController extends AbstractController
     private function challengeKey(string $address, string $chainId): string
     {
         return 'wallet_login_challenge:' . $chainId . ':' . $address;
+    }
+
+    private function identityScopes($input): array
+    {
+        $scopes = is_array($input) ? $input : preg_split('/\s+/', trim((string)$input));
+        $allowed = ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email'];
+        $scopes = array_values(array_unique(array_filter(array_map('trim', $scopes))));
+        if (array_diff($scopes, $allowed)) abort(422, '不支持的钱包身份 scope');
+        return $scopes;
+    }
+
+    private function identityCallbackUrl(): string
+    {
+        return rtrim((string)config('app.url'), '/') . '/api/identity/callback';
+    }
+
+    private function nodeIdentityRequest(string $path, array $payload): array
+    {
+        $base = rtrim(trim((string)config('dootask.passport_node_url', '')), '/');
+        if ($base === '' || !config('dootask.passport_client_id')) abort(503, '钱包身份服务未配置');
+        $response = (new Client(['base_uri' => $base, 'timeout' => 15, 'connect_timeout' => 5]))->post($path, ['json' => $payload]);
+        $body = json_decode((string)$response->getBody(), true);
+        if (!is_array($body) || intval($body['code'] ?? -1) !== 0 || !is_array($body['data'] ?? null)) abort(502, '钱包身份服务返回异常');
+        return $body['data'];
     }
 }

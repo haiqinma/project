@@ -14,6 +14,7 @@ class UserWallet extends AbstractModel
         'chain_id',
         'address',
         'address_normalized',
+        'wallet_identity_id',
         'last_login_at',
     ];
 

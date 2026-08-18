@@ -189,7 +189,7 @@ import {mapState} from "vuex";
 import {languageList, languageName, setLanguage} from "../language";
 import VueQrcode from "@chenfengyuan/vue-qrcode";
 import emitter from "../store/events";
-import {connectAndGetWalletProfile, getProvider, requestAccounts, signMessage} from "@yeying-community/web3-bs";
+import {getProvider, requestAccounts, requestIdentityPresentation, signMessage} from "@yeying-community/web3-bs";
 
 export default {
     components: {VueQrcode},
@@ -711,34 +711,34 @@ export default {
                 const provider = await getProvider({preferYeYing: true, timeoutMs: 3000});
                 if (!provider) throw new Error(this.$L('未检测到夜莺钱包，请先安装并解锁钱包插件'));
                 let address = '';
-                let walletProfile = {};
-                try {
-                    const profileResult = await connectAndGetWalletProfile({
-                        provider,
-                        fields: ['username', 'email'],
-                    });
-                    address = profileResult.address;
-                    walletProfile = profileResult.profile || {};
-                } catch (_) {
-                    const accounts = await requestAccounts({provider});
-                    address = accounts[0];
-                }
+                const accounts = await requestAccounts({provider});
+                address = accounts[0];
                 if (!address) throw new Error(this.$L('钱包未返回可用账号'));
                 const challengeResponse = await fetch(`${window.location.origin}/api/public/auth/challenge`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({address}),
+                    body: JSON.stringify({address, identity_scopes: ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email']}),
                 });
                 const challengePayload = await challengeResponse.json();
                 if (challengePayload.ret !== 1) throw new Error(challengePayload.msg || this.$L('获取钱包登录挑战失败'));
+                const identityRequest = challengePayload.data.identity_authorization;
+                if (!identityRequest) throw new Error(this.$L('钱包身份授权请求创建失败'));
+                const identityPresentation = await requestIdentityPresentation({
+                    provider,
+                    appId: identityRequest.appId,
+                    audience: identityRequest.audience,
+                    nonce: identityRequest.nonce,
+                    scopes: identityRequest.scopes,
+                    requestId: identityRequest.requestId,
+                    ensureConnected: false,
+                });
                 const signature = await signMessage({provider, address, message: challengePayload.data.challenge});
                 const verifyResponse = await fetch(`${window.location.origin}/api/public/auth/verify`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({address, signature}),
+                    body: JSON.stringify({address, signature, identity_presentation: identityPresentation}),
                 });
                 const verifyPayload = await verifyResponse.json();
                 if (verifyPayload.data?.code === 'wallet_email_required') {
-                    await this.completeWalletEmail(verifyPayload.data.setup_token, walletProfile);
-                    return;
+                    throw new Error(this.$L('请先在钱包身份中完成邮箱验证'));
                 }
                 if (verifyPayload.ret !== 1 || !verifyPayload.data?.token) throw new Error(verifyPayload.msg || this.$L('钱包登录失败'));
                 const result = verifyPayload.data;
