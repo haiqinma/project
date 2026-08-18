@@ -25,6 +25,8 @@
 # Environment and configuration
 .env
 vars.yaml
+scripts/backup.conf
+scripts/.passphrase-file
 
 # IDE and editor files
 .cursor/*
