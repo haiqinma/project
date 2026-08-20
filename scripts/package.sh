@@ -209,12 +209,18 @@ rsync -a \
   --exclude '.env' \
   "$source_dir/" "$package_dir/"
 
+mkdir -p "$package_dir/scripts"
+install -m 0644 "$root_dir/scripts/backup.conf.template" "$package_dir/scripts/backup.conf.template"
+install -m 0755 "$root_dir/scripts/config_backup.sh" "$package_dir/scripts/config_backup.sh"
+install -m 0644 "$root_dir/scripts/.passphrase-file.template" "$package_dir/scripts/.passphrase-file.template"
+
 chmod 755 "$package_dir"
 chmod +x \
   "$package_dir/scripts/ubuntu-deps.sh" \
   "$package_dir/scripts/starter.sh" \
   "$package_dir/scripts/health-check.sh" \
-  "$package_dir/scripts/install.sh"
+  "$package_dir/scripts/install.sh" \
+  "$package_dir/scripts/config_backup.sh"
 
 tar -czf "$archive_path" -C "$stage_dir" "$package_name"
 echo "Package created: $archive_path"
