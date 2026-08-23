@@ -433,7 +433,7 @@ class PassportController extends AbstractController
 
     private function scope(): array
     {
-        $scope = trim((string)config('dootask.passport_scope', 'openid profile wallet'));
+        $scope = trim((string)config('dootask.passport_scope', 'identity.basic identity.email identity.wallet'));
         $aliases = [
             'openid' => 'identity.basic',
             'profile' => 'identity.email',
