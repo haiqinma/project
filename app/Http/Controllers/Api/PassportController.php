@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Models\User;
 use App\Models\UserWallet;
 use App\Module\Base;
+use App\Services\Wallet\IdentityCredentialVerifier;
 use Carbon\Carbon;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 use Request;
 
 /**
- * YeYing Passport 登录接入。
+ * YeYing 通行证登录接入。
  *
  * Project 只负责创建登录请求、展示二维码、查询 Node 登录状态并换取本地会话。
  * 钱包签名、Passkey、手机确认和应用授权由 Node / Wallet 负责。
@@ -26,7 +27,7 @@ class PassportController extends AbstractController
     /**
      * @api {post} api/passport/login/session 创建通行证登录会话
      *
-     * @apiDescription 调用 Node Passport 创建二维码登录会话。未配置 PASSPORT_NODE_URL 时前端应回退旧二维码。
+     * @apiDescription 调用 Node 钱包身份授权服务创建二维码登录会话。未配置 PASSPORT_NODE_URL 时前端应回退旧二维码。
      * @apiVersion 1.0.0
      * @apiGroup passport
      * @apiName login__session
@@ -56,7 +57,7 @@ class PassportController extends AbstractController
             'requestTtlMs' => self::SESSION_TTL_SECONDS * 1000,
         ];
 
-        $result = $this->nodeRequest('POST', '/api/v1/public/auth/passport/authorize/request', $payload);
+        $result = $this->nodeRequest('POST', '/api/v1/public/identity/authorize/request', $payload);
         if (!Base::isSuccess($result)) {
             return $result;
         }
@@ -67,7 +68,7 @@ class PassportController extends AbstractController
             return Base::retError('通行证服务返回异常', ['code' => 'passport_session_missing']);
         }
 
-        $qrcodeUrl = trim((string)($data['verifyUrl'] ?? $data['verify_url'] ?? ''));
+        $qrcodeUrl = $this->absoluteNodeUrl(trim((string)($data['verifyUrl'] ?? $data['verify_url'] ?? '')));
 
         Cache::put($this->sessionCacheKey($sessionId), [
             'request_id' => $requestId,
@@ -134,7 +135,7 @@ class PassportController extends AbstractController
             return Base::retError('通行证登录二维码已过期', ['code' => 'expired', 'status' => 'expired']);
         }
 
-        $result = $this->nodeRequest('GET', '/api/v1/public/auth/passport/authorize/request/' . rawurlencode($requestId));
+        $result = $this->nodeRequest('GET', '/api/v1/public/identity/authorize/request/' . rawurlencode($requestId));
         if (!Base::isSuccess($result)) {
             return $result;
         }
@@ -161,7 +162,7 @@ class PassportController extends AbstractController
     }
 
     /**
-     * @api {get} api/passport/callback 接收 Node Passport 登录回调
+     * @api {get} api/passport/callback 接收 Node 钱包身份授权回调
      *
      * @apiParam {String} code Node 一次性授权码
      * @apiParam {String} state Project 本地登录会话 ID
@@ -251,37 +252,40 @@ class PassportController extends AbstractController
             'codeVerifier' => trim((string)($cache['code_verifier'] ?? '')),
         ];
 
-        return $this->nodeRequest('POST', '/api/v1/public/auth/passport/authorize/exchange', $payload);
+        return $this->nodeRequest('POST', '/api/v1/public/identity/authorize/exchange', $payload);
     }
 
     private function loginByPassportIdentity(array $identity): array
     {
-        $claims = is_array($identity['claims'] ?? null) ? $identity['claims'] : [];
-        $address = strtolower(trim((string)($claims['walletAddress'] ?? $identity['walletAddress'] ?? '')));
-        $chain = 'eip155';
-        $chainId = trim((string)config('dootask.wallet_chain_id', '1'));
+        $did = $this->normalizeDid($identity['did'] ?? '');
+        $address = $this->normalizeAddress($identity['walletAddress'] ?? '');
+        $credentials = $identity['credentials'] ?? [];
 
-        if (!preg_match('/^0x[a-f0-9]{40}$/', $address)) {
+        if ($did === '') {
+            return Base::retError('通行证未返回有效钱包身份', ['code' => 'passport_identity_missing']);
+        }
+        if ($address === '') {
             return Base::retError('通行证未返回有效钱包地址', ['code' => 'passport_wallet_missing']);
         }
 
-        $userWallet = UserWallet::where('chain', $chain)
-            ->where('chain_id', $chainId)
-            ->where('address_normalized', $address)
-            ->first();
-        if (!$userWallet) {
-            return Base::retError('该通行证尚未绑定 Project 账号，请先使用邮箱账号登录后绑定钱包', [
-                'code' => 'passport_wallet_unbound',
-                'address_display' => $this->maskWalletAddress($address),
-                'chain_id' => $chainId,
-            ]);
-        }
-
+        $userWallet = $this->upsertWalletIdentity($did, $address);
         $user = User::whereUserid($userWallet->userid)->first();
         if (!$user || $user->disable_at) {
             return Base::retError('通行证绑定的账号不可用', ['code' => 'passport_user_disabled']);
         }
-        $this->applyPassportEmailClaim($user, $claims);
+
+        $verifiedEmail = null;
+        foreach ($credentials as $credential) {
+            $type = $credential['type'] ?? '';
+            $token = $credential['credential'] ?? '';
+            if ($type === 'EmailCredential' && $did !== '' && $token !== '') {
+                $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'EmailCredential');
+                $verifiedEmail = strtolower(trim((string)data_get($claims, 'vc.credentialSubject.email', '')));
+            }
+        }
+        if ($verifiedEmail) {
+            $this->applyPassportEmailClaim($user, ['email' => $verifiedEmail, 'emailVerified' => true]);
+        }
         if (!$user->email || str_ends_with($user->email, '@wallet.yeying.local') || intval($user->email_verity) !== 1) {
             return Base::retError('请先设置并验证邮箱', ['code' => 'wallet_email_required']);
         }
@@ -298,6 +302,50 @@ class PassportController extends AbstractController
         User::generateToken($user, true);
 
         return Base::retSuccess('success', $user);
+    }
+
+    private function upsertWalletIdentity(string $did, string $address): UserWallet
+    {
+        $chainId = trim((string)config('dootask.wallet_chain_id', '1'));
+        $wallet = UserWallet::where('wallet_identity_did', $did)->first()
+            ?: UserWallet::where('chain', 'eip155')->where('chain_id', $chainId)->where('address_normalized', $address)->first();
+        if ($wallet) {
+            if ($wallet->wallet_identity_did !== $did) {
+                $wallet->update(['wallet_identity_did' => $did]);
+            }
+            return $wallet;
+        }
+
+        $placeholder = 'wallet-' . substr(hash('sha256', $address . ':' . $chainId), 0, 24) . '@wallet.yeying.local';
+        $user = User::whereEmail($placeholder)->first();
+        if (!$user) {
+            $user = User::reg($placeholder, Str::random(32), ['nickname' => '夜莺用户']);
+            $user->email_verity = 0;
+            $user->save();
+        }
+        $wallet = UserWallet::createInstance([
+            'userid' => $user->userid,
+            'chain' => 'eip155',
+            'chain_id' => $chainId,
+            'address' => $address,
+            'address_normalized' => $address,
+            'wallet_identity_did' => $did,
+            'last_login_at' => Carbon::now(),
+        ]);
+        $wallet->save();
+        return $wallet;
+    }
+
+    private function normalizeAddress($address): string
+    {
+        $address = strtolower(trim((string)$address));
+        return preg_match('/^0x[a-f0-9]{40}$/', $address) ? $address : '';
+    }
+
+    private function normalizeDid($did): string
+    {
+        $did = trim((string)$did);
+        return preg_match('/^did:yeying:wid_[A-Za-z0-9_-]{22,}$/', $did) ? $did : '';
     }
 
     private function applyPassportEmailClaim(User $user, array $claims): void
@@ -385,7 +433,7 @@ class PassportController extends AbstractController
 
     private function scope(): array
     {
-        $scope = trim((string)config('dootask.passport_scope', 'openid profile wallet'));
+        $scope = trim((string)config('dootask.passport_scope', 'identity.basic identity.email identity.wallet'));
         $aliases = [
             'openid' => 'identity.basic',
             'profile' => 'identity.email',
@@ -420,23 +468,23 @@ class PassportController extends AbstractController
         return Request::getSchemeAndHttpHost();
     }
 
+    private function absoluteNodeUrl(string $url): string
+    {
+        if ($url === '' || preg_match('/^https?:\/\//i', $url)) {
+            return $url;
+        }
+        return $this->nodeBaseUrl() . '/' . ltrim($url, '/');
+    }
+
     private function sessionCacheKey(string $sessionId): string
     {
         return 'passport_login_session:' . hash('sha256', $sessionId);
     }
 
-    private function maskWalletAddress(string $address): string
-    {
-        $value = trim($address);
-        if (strlen($value) <= 12) {
-            return $value;
-        }
-        return substr($value, 0, 6) . '...' . substr($value, -4);
-    }
-
     private function callbackHtml(string $sessionId): string
     {
         $payload = json_encode([
+            'action' => 'project-passport-callback',
             'sessionId' => $sessionId,
             'status' => 'approved',
             'time' => time(),
@@ -449,13 +497,25 @@ class PassportController extends AbstractController
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>YeYing Passport</title>
+    <style>html,body{margin:0;background:#fff}</style>
 </head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;padding:32px;line-height:1.6;color:#1f2937">
-    <h3>通行证登录已确认</h3>
-    <p>正在通知 Project 登录页，请回到电脑端继续使用。</p>
+<body>
     <script>
         (function () {
             var payload = {$payload};
+            var closeWindow = function () {
+                try {
+                    window.open('', '_self');
+                } catch (e) {}
+                try {
+                    window.close();
+                } catch (e) {}
+            };
+            try {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage(JSON.stringify(payload), window.location.origin);
+                }
+            } catch (e) {}
             try {
                 window.localStorage.setItem('__project_passport_callback__', JSON.stringify(payload));
             } catch (e) {}
@@ -464,9 +524,8 @@ class PassportController extends AbstractController
                 channel.postMessage(payload);
                 channel.close();
             } catch (e) {}
-            setTimeout(function () {
-                window.close();
-            }, 1200);
+            closeWindow();
+            setTimeout(closeWindow, 80);
         })();
     </script>
 </body>

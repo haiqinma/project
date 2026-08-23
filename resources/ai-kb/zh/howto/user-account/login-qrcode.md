@@ -17,7 +17,7 @@ related_tools: []
 related_pages: []
 prerequisites:
   - 被登录端处于登录页
-  - 已配置通行证登录时，可使用手机相机或夜莺钱包扫码确认
+  - 已配置钱包身份通行证登录时，可使用手机相机或夜莺钱包扫码确认
   - 未配置通行证登录时，需要一端已登录，作为旧版扫码端
 negative:
   - 通行证二维码只包含一次性登录会话，不包含 Project 登录 token
@@ -30,7 +30,7 @@ last_verified: v0.0.2
 # 扫码登录
 
 ## 是什么
-YeYing 登录页支持扫码登录。配置 Node Passport 后，登录页优先生成「通行证扫码登录」二维码，用户可以用手机相机或夜莺钱包扫码，在手机上确认后让当前 Project 页面登录。
+YeYing 登录页支持扫码登录。配置 Node 钱包身份授权服务后，登录页优先生成「通行证扫码登录」二维码，用户可以用手机相机或夜莺钱包扫码，在手机上确认后让当前 Project 页面登录。
 
 如果部署未配置通行证登录，系统会回退到旧版 Project 本地二维码：已登录的另一端扫码后，让登录页直接登入对应账号。旧版底层接口为 `api/users/login/qrcode`。
 
@@ -43,9 +43,9 @@ YeYing 登录页支持扫码登录。配置 Node Passport 后，登录页优先�
 二维码仅用于展示当前登录会话。点击二维码可生成新的会话；二维码过期时会自动刷新。
 
 ## 通行证接口流程（了解原理用）
-- 被登录端：调用 `api/passport/login/session` 创建 Node Passport 登录会话并展示二维码
-- 手机端：打开 Node Passport 授权页 `/passport/authorize?requestId=...`，用 Passkey/指纹完成确认
-- 被登录端：周期性调用 `api/passport/login/status`，确认通过后 Project 用一次性 code 换取本地用户 token；扫码和本机通行证登录使用同一个登录会话，本机回调页会通知登录页立即完成状态检查
+- 被登录端：调用 `api/passport/login/session` 创建 Node 钱包身份授权会话并展示二维码
+- 手机端：打开 Node 钱包身份授权页 `/identity/authorize?requestId=...`，用已注册到钱包身份的 Passkey/指纹完成确认
+- 被登录端：周期性调用 `api/passport/login/status`，确认通过后 Project 用一次性 code 换取本地用户 token；扫码和本机通行证登录使用同一个登录会话，本机回调页会通知登录页立即完成状态检查并自动关闭
 - 未配置 `PASSPORT_NODE_URL` 或通行证服务不可用时，前端回退旧版本地扫码登录
 
 ## 部署注意

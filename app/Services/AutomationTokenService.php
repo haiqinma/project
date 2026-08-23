@@ -10,6 +10,8 @@ use App\Models\AutomationTokenNonce;
 use App\Models\ProjectUser;
 use App\Models\ProjectTask;
 use App\Models\ProjectTaskFile;
+use App\Models\File;
+use App\Models\FileUser;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -181,7 +183,32 @@ class AutomationTokenService
                 return;
             }
         }
+        if (str_starts_with($resource, 'file/') || str_starts_with($resource, 'upload/')) {
+            self::authorizeFileCabinetRequest($token, $request);
+            return;
+        }
         self::forbidStandardRequest($token, $request);
+    }
+
+    /**
+     * 文件柜 API 授权：令牌持有者只能操作自己拥有的文件或共享给自己的文件。
+     * 无 file_id 的操作（列表、搜索、根目录创建）直接放行，由控制器层权限校验。
+     */
+    private static function authorizeFileCabinetRequest(AutomationToken $token, Request $request): void
+    {
+        $fileId = intval($request->input('id'));
+        if ($fileId > 0) {
+            $file = File::withTrashed()->find($fileId);
+            if (!$file) {
+                self::forbidStandardRequest($token, $request, 'file', $fileId);
+            }
+            $allowed = $file->userid == $token->userid
+                || $file->created_id == $token->userid
+                || FileUser::whereFileId($fileId)->whereUserid($token->userid)->exists();
+            if (!$allowed) {
+                self::forbidStandardRequest($token, $request, 'file', $fileId);
+            }
+        }
     }
 
     private static function standardRequestProjectId(Request $request): int

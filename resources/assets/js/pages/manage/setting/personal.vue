@@ -230,12 +230,17 @@ export default {
                 const accounts = await requestAccounts({provider});
                 const address = accounts[0];
                 if (!address) throw new Error('钱包未返回可用账号');
-                const challengeResponse = await fetch(`${window.location.origin}/api/public/auth/challenge`, {
+                const challengeResponse = await fetch($A.apiUrl('public/auth/challenge'), {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({address, chain_id: '1'}),
                 });
-                const challengePayload = await challengeResponse.json();
+                let challengePayload;
+                try {
+                    challengePayload = await challengeResponse.json();
+                } catch (_) {
+                    throw new Error(`获取钱包绑定挑战失败 (HTTP ${challengeResponse.status})`);
+                }
                 if (!challengeResponse.ok || challengePayload.ret !== 1) {
                     throw new Error(challengePayload.msg || '获取钱包绑定挑战失败');
                 }

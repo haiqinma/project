@@ -415,7 +415,7 @@ API 使用动态路由（见 `routes/web.php`），URL 段映射为控制器方�
 | --- | --- | --- | --- |
 | api/passport/login/session | login__session() | post | 创建通行证登录会话 |
 | api/passport/login/status | login__status() | get | 查询通行证登录状态 |
-| api/passport/callback | callback() | get | 接收 Node Passport 登录回调 |
+| api/passport/callback | callback() | get | 接收 Node 钱包身份授权回调 |
 
 ## test（TestController）
 

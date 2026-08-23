@@ -20,7 +20,7 @@ negative:
   - 账号被停用（disable_at 非空）会提示「帐号已停用」，需联系管理员
   - 开启「注册需邮箱验证」时，未验证邮箱的账号无法登录，必须先完成验证（[[user-account.email-verify.howto]]）
   - 多次失败后系统会强制要求填验证码（[[user-account.login-codeimg.howto]]）
-last_verified: v0.0.1
+last_verified: v0.0.2
 ---
 
 # 登录账号
@@ -33,9 +33,17 @@ last_verified: v0.0.1
 YeYing 同时支持以下登录方式（在登录页可切换）：
 
 1. **邮箱 + 密码**：默认方式
-2. **扫码登录**：客户端/App 已登录后扫码登录另一端，详见 [[user-account.login-qrcode.howto]]
-3. **LDAP**：管理员启用 LDAP 时，邮箱+LDAP 密码也可登录，系统自动同步用户
-4. **SSO**：管理员配置 OAuth/SAML 后，登录页会出现对应按钮（具体取决于插件）
+2. **钱包登录**：安装夜莺钱包插件后，点击「钱包登录」按钮，通过 SIWE 签名 + Wallet Identity V1 协议完成登录。首次钱包登录需设置并验证邮箱。
+3. **通行证扫码登录**：使用夜莺钱包 App 扫描登录页二维码确认登录，无需钱包插件；通过 Wallet Identity authorization code + PKCE 协议完成身份验证。
+4. **扫码登录**：客户端/App 已登录后扫码登录另一端，详见 [[user-account.login-qrcode.howto]]
+5. **LDAP**：管理员启用 LDAP 时，邮箱+LDAP 密码也可登录，系统自动同步用户
+6. **SSO**：管理员配置 OAuth/SAML 后，登录页会出现对应按钮（具体取决于插件）
+
+## 钱包登录与通行证登录的身份模型
+- 钱包登录和通行证登录均基于 Wallet Identity V1 协议，跨应用身份主键为 DID（格式为 `did:yeying:wid_*`）。
+- 钱包地址是可变的关联凭据，不是永久用户主键；一个钱包身份可关联多个 EVM 或非 EVM 地址。
+- 应用通过 `identity.basic`、`identity.wallet`、`identity.username`、`identity.email` scope 按需请求用户身份信息；用户名和邮箱只接受 issuer 签发的已验证凭证（JWT-VC），不信任前端提交值。
+- 通行证登录（无插件）使用 Wallet Identity authorization code + PKCE 兑换；Project 从 Node 返回的 DID、钱包地址和凭证完成本地登录。
 
 ## 邮箱密码登录步骤
 1. 填邮箱、密码
