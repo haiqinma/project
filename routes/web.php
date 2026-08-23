@@ -35,6 +35,7 @@ use App\Http\Controllers\StorageObjectController;
 
 
 // 钱包 SIWE 登录必须先于通用 public 路由匹配。
+Route::any('api/public/auth/identity/{method}/{action}', WalletAuthController::class)->middleware(['webapi']);
 Route::any('api/public/auth/{method}', WalletAuthController::class)->middleware(['webapi']);
 
 /**

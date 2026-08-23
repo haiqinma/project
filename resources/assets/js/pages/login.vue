@@ -189,7 +189,7 @@ import {mapState} from "vuex";
 import {languageList, languageName, setLanguage} from "../language";
 import VueQrcode from "@chenfengyuan/vue-qrcode";
 import emitter from "../store/events";
-import {getProvider, requestAccounts, requestIdentityPresentation, signMessage} from "@yeying-community/web3-bs";
+import {getProvider, loginWithWalletIdentity} from "@yeying-community/web3-bs";
 
 export default {
     components: {VueQrcode},
@@ -462,7 +462,7 @@ export default {
                         this.qrcodeRefresh();
                         return;
                     }
-                    if (['passport_wallet_unbound', 'wallet_email_required'].includes(data?.code)) {
+                    if (data?.code === 'wallet_email_required') {
                         this.qrcodeStatusText = msg || this.$L('扫码登录失败，请刷新二维码。');
                         return;
                     }
@@ -505,6 +505,7 @@ export default {
 
         bindPassportCallbackEvents() {
             window.addEventListener('storage', this.onPassportCallbackStorage);
+            window.addEventListener('message', this.onPassportCallbackMessage);
             window.addEventListener('focus', this.onPassportWindowFocus);
             document.addEventListener('visibilitychange', this.onPassportVisibilityChange);
             if ('BroadcastChannel' in window) {
@@ -515,6 +516,7 @@ export default {
 
         unbindPassportCallbackEvents() {
             window.removeEventListener('storage', this.onPassportCallbackStorage);
+            window.removeEventListener('message', this.onPassportCallbackMessage);
             window.removeEventListener('focus', this.onPassportWindowFocus);
             document.removeEventListener('visibilitychange', this.onPassportVisibilityChange);
             if (this.qrcodeBroadcastChannel) {
@@ -528,6 +530,13 @@ export default {
                 return;
             }
             this.handlePassportCallbackEvent($A.jsonParse(event.newValue));
+        },
+
+        onPassportCallbackMessage(event) {
+            if (event.origin !== window.location.origin) {
+                return;
+            }
+            this.handlePassportCallbackEvent($A.jsonParse(event.data));
         },
 
         onPassportWindowFocus() {
@@ -560,7 +569,7 @@ export default {
             if (this.qrcodeMode !== 'passport' || !this.qrcodeUrlValue) {
                 return;
             }
-            window.open(this.qrcodeUrlValue, '_blank', 'noopener,noreferrer');
+            window.open(this.qrcodeUrlValue, '_blank');
         },
 
         forgotPassword() {
@@ -704,90 +713,51 @@ export default {
             }
         },
 
+        async walletRequest(url, options, failureMessage) {
+            const response = await fetch($A.apiUrl(url), options);
+            let payload;
+            try {
+                payload = await response.json();
+            } catch (_) {
+                throw new Error(`${failureMessage} (HTTP ${response.status})`);
+            }
+            if (!response.ok) {
+                throw new Error(payload?.msg || `${failureMessage} (HTTP ${response.status})`);
+            }
+            return payload;
+        },
+
         async onWalletLogin() {
             if (this.walletLoading) return;
             this.walletLoading = true;
             try {
                 const provider = await getProvider({preferYeYing: true, timeoutMs: 3000});
                 if (!provider) throw new Error(this.$L('未检测到夜莺钱包，请先安装并解锁钱包插件'));
-                let address = '';
-                const accounts = await requestAccounts({provider});
-                address = accounts[0];
-                if (!address) throw new Error(this.$L('钱包未返回可用账号'));
-                const challengeResponse = await fetch(`${window.location.origin}/api/public/auth/challenge`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({address, identity_scopes: ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email']}),
-                });
-                const challengePayload = await challengeResponse.json();
-                if (challengePayload.ret !== 1) throw new Error(challengePayload.msg || this.$L('获取钱包登录挑战失败'));
-                const identityRequest = challengePayload.data.identity_authorization;
-                if (!identityRequest) throw new Error(this.$L('钱包身份授权请求创建失败'));
-                const identityPresentation = await requestIdentityPresentation({
+                const result = await loginWithWalletIdentity({
                     provider,
-                    appId: identityRequest.appId,
-                    audience: identityRequest.audience,
-                    nonce: identityRequest.nonce,
-                    scopes: identityRequest.scopes,
-                    requestId: identityRequest.requestId,
-                    ensureConnected: false,
+                    baseUrl: $A.apiUrl('public/auth'),
+                    credentials: 'include',
+                    storeToken: false,
                 });
-                const signature = await signMessage({provider, address, message: challengePayload.data.challenge});
-                const verifyResponse = await fetch(`${window.location.origin}/api/public/auth/verify`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({address, signature, identity_presentation: identityPresentation}),
-                });
-                const verifyPayload = await verifyResponse.json();
-                if (verifyPayload.data?.code === 'wallet_email_required') {
-                    throw new Error(this.$L('请先在钱包身份中完成邮箱验证'));
-                }
-                if (verifyPayload.ret !== 1 || !verifyPayload.data?.token) throw new Error(verifyPayload.msg || this.$L('钱包登录失败'));
-                const result = verifyPayload.data;
-                const response = await fetch(`${window.location.origin}/api/users/info`, {
+                const payload = await this.walletRequest('users/info', {
                     headers: {'dootask-token': result.token},
-                });
-                const payload = await response.json();
-                if (!response.ok || !payload.data) {
+                }, this.$L('钱包登录成功，但用户信息获取失败'));
+                if (!payload.data) {
                     throw new Error(this.$L('钱包登录成功，但用户信息获取失败'));
                 }
                 await this.$store.dispatch('handleClearCache', Object.assign({}, payload.data, {token: result.token}));
                 this.goNext();
             } catch (error) {
-                if (error?.message === 'Verify response missing token') {
-                    $A.modalWarning('该钱包尚未绑定 YeYing 账号，请先使用邮箱账号登录后绑定钱包');
+                if (error?.message === 'WALLET_ACCOUNT_REQUIRED') {
+                    $A.modalError(this.$L('钱包未返回可用账号'));
+                } else if (error?.message === 'WALLET_IDENTITY_TOKEN_MISSING') {
+                    $A.modalError(this.$L('钱包登录成功，但用户信息获取失败'));
                 } else {
                     $A.modalError(error?.message || '钱包登录失败');
                 }
             } finally {
                 this.walletLoading = false;
             }
-        },
-
-        completeWalletEmail(setupToken, walletProfile = {}) {
-            return new Promise((resolve, reject) => {
-                $A.modalInput({
-                    title: '首次钱包登录，请设置邮箱',
-                    value: walletProfile.email || '',
-                    placeholder: '请输入邮箱地址',
-                    onOk: (email) => {
-                        email = $A.trim(email || '');
-                        if (!$A.isEmail(email)) return '请输入有效邮箱地址';
-                        return fetch(`${window.location.origin}/api/public/auth/email`, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                email,
-                                username: walletProfile.username || '',
-                                setup_token: setupToken,
-                            }),
-                        }).then(response => response.json()).then(payload => {
-                            if (payload.ret !== 1) throw new Error(payload.msg || this.$L('邮箱设置失败'));
-                            $A.modalWarning('验证邮件已发送，请完成邮箱验证后再使用钱包登录');
-                            resolve();
-                        });
-                    },
-                    onCancel: reject,
-                });
-            });
         },
 
         onLogin() {

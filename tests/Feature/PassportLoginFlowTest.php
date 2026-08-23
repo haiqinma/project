@@ -39,7 +39,7 @@ class PassportLoginFlowTest extends TestCase
         $controller = new TestPassportController();
         $controller->responses[] = Base::retSuccess('success', [
             'requestId' => 'passport-request-1',
-            'verifyUrl' => 'http://node.test/passport/authorize?requestId=passport-request-1',
+            'verifyUrl' => '/identity/authorize?requestId=passport-request-1',
             'status' => 'pending',
         ]);
 
@@ -47,10 +47,11 @@ class PassportLoginFlowTest extends TestCase
 
         $this->assertSame(1, $result['ret']);
         $this->assertNotEmpty($result['data']['session_id']);
+        $this->assertSame('http://node.test/identity/authorize?requestId=passport-request-1', $result['data']['qrcode_url']);
         $this->assertArrayNotHasKey('code_verifier', $result['data']);
         $request = $controller->requests[0];
         $this->assertSame('POST', $request['method']);
-        $this->assertSame('/api/v1/public/auth/passport/authorize/request', $request['path']);
+        $this->assertSame('/api/v1/public/identity/authorize/request', $request['path']);
         $this->assertSame('S256', $request['payload']['codeChallengeMethod']);
         $this->assertSame(['identity.basic', 'identity.email', 'identity.wallet'], $request['payload']['scopes']);
         $this->assertSame($result['data']['session_id'], $request['payload']['state']);
@@ -80,7 +81,7 @@ class PassportLoginFlowTest extends TestCase
         $this->assertSame(1, $result['ret']);
         $this->assertSame('scanned', $result['data']['status']);
         $this->assertSame(
-            '/api/v1/public/auth/passport/authorize/request/passport-request-2',
+            '/api/v1/public/identity/authorize/request/passport-request-2',
             $controller->requests[0]['path']
         );
     }
@@ -137,6 +138,20 @@ class PassportLoginFlowTest extends TestCase
         ]);
         $this->assertSame('local@example.com', $existing->email);
         $this->assertSame(1, $existing->email_verity);
+    }
+
+    public function test_latest_passport_did_is_used_as_local_identity_key(): void
+    {
+        $controller = new TestPassportController();
+        $method = new \ReflectionMethod(PassportController::class, 'normalizeDid');
+        $method->setAccessible(true);
+
+        $this->assertSame(
+            'did:yeying:wid_1234567890123456789012',
+            $method->invoke($controller, 'did:yeying:wid_1234567890123456789012')
+        );
+        $this->assertSame('', $method->invoke($controller, 'wid_1234567890123456789012'));
+        $this->assertSame('', $method->invoke($controller, 'did:yeying:sub_1234567890123456789012'));
     }
 
     private function cacheKey(string $sessionId): string

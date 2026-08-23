@@ -646,12 +646,12 @@ export default {
         //
         dispatch("getDialogAuto").catch(() => {});
         dispatch("getDialogTodo", 0).catch(() => {});
-        dispatch("getTaskPriority", 1000);
-        dispatch("getReportUnread", 1000);
+        dispatch("getTaskPriority", 1000).catch(() => {});
+        dispatch("getReportUnread", 1000).catch(() => {});
         dispatch("getProjectsForDepartmentOwnerView").catch(() => {});
-        dispatch("getTaskForDashboard");
-        dispatch("dialogMsgRead");
-        dispatch("updateMicroAppsStatus");
+        dispatch("getTaskForDashboard").catch(() => {});
+        dispatch("dialogMsgRead").catch(() => {});
+        dispatch("updateMicroAppsStatus").catch(() => {});
         //
         const allIds = Object.values(state.userAvatar).map(({userid}) => userid).filter(id => id > 0);
         [...new Set(allIds)].some(userid => dispatch("getUserBasic", {userid}))
@@ -2425,7 +2425,7 @@ export default {
         }
         state.loadDashboardTasks = true;
         //
-        dispatch("getTasks", null).finally(_ => {
+        dispatch("getTasks", null).catch(() => {}).finally(_ => {
             state.loadDashboardTasks = false;
         })
     },
