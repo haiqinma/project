@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Api\PassportController;
+use App\Http\Controllers\Api\WalletAuthController;
 use App\Models\User;
 use App\Module\Base;
+use App\Services\Wallet\IdentityCredentialVerifier;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Request;
+use RuntimeException;
 use Tests\TestCase;
 
 class TestPassportController extends PassportController
@@ -19,6 +22,14 @@ class TestPassportController extends PassportController
     {
         $this->requests[] = compact('method', 'path', 'payload');
         return array_shift($this->responses) ?? Base::retError('missing test response');
+    }
+}
+
+class ExpiredTestIdentityCredentialVerifier extends IdentityCredentialVerifier
+{
+    public function verify(string $token, string $expectedDid, string $expectedType): array
+    {
+        throw new RuntimeException('identity_credential_expired');
     }
 }
 
@@ -152,6 +163,37 @@ class PassportLoginFlowTest extends TestCase
         );
         $this->assertSame('', $method->invoke($controller, 'wid_1234567890123456789012'));
         $this->assertSame('', $method->invoke($controller, 'did:yeying:sub_1234567890123456789012'));
+    }
+
+    public function test_wallet_identity_expired_email_credential_does_not_raise_server_error(): void
+    {
+        app()->instance(IdentityCredentialVerifier::class, new ExpiredTestIdentityCredentialVerifier());
+
+        $controller = new WalletAuthController();
+        $method = new \ReflectionMethod(WalletAuthController::class, 'applyIdentityCredentials');
+        $method->setAccessible(true);
+        $user = new User();
+        $user->email = 'wallet-user@wallet.yeying.local';
+        $user->email_verity = 0;
+
+        $method->invoke($controller, $user, [
+            'holder' => 'did:yeying:wid_1234567890123456789012',
+            'credentials' => ['expired-jwt-vc'],
+        ]);
+
+        $this->assertSame('wallet-user@wallet.yeying.local', $user->email);
+        $this->assertSame(0, $user->email_verity);
+    }
+
+    public function test_wallet_identity_login_session_returns_issuer_endpoint(): void
+    {
+        Request::replace(['address' => '0x5c7bf91C493126314bb821C123Dee889FFCa3932']);
+        $controller = new WalletAuthController();
+
+        $result = $controller->login__session();
+
+        $this->assertSame(1, $result['ret']);
+        $this->assertSame('http://node.test', $result['data']['issuerEndpoint']);
     }
 
     private function cacheKey(string $sessionId): string

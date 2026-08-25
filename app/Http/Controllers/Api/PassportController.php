@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Request;
+use Throwable;
 
 /**
  * YeYing 通行证登录接入。
@@ -279,7 +280,11 @@ class PassportController extends AbstractController
             $type = $credential['type'] ?? '';
             $token = $credential['credential'] ?? '';
             if ($type === 'EmailCredential' && $did !== '' && $token !== '') {
-                $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'EmailCredential');
+                try {
+                    $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'EmailCredential');
+                } catch (Throwable) {
+                    continue;
+                }
                 $verifiedEmail = strtolower(trim((string)data_get($claims, 'vc.credentialSubject.email', '')));
             }
         }

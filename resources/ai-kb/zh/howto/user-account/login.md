@@ -43,6 +43,7 @@ YeYing 同时支持以下登录方式（在登录页可切换）：
 - 钱包登录和通行证登录均基于 Wallet Identity V1 协议，跨应用身份主键为 DID（格式为 `did:yeying:wid_*`）。
 - 钱包地址是可变的关联凭据，不是永久用户主键；一个钱包身份可关联多个 EVM 或非 EVM 地址。
 - 应用通过 `identity.basic`、`identity.wallet`、`identity.username`、`identity.email` scope 按需请求用户身份信息；用户名和邮箱只接受 issuer 签发的已验证凭证（JWT-VC），不信任前端提交值。
+- 钱包插件登录需要邮箱时，Project 会把 Node issuer endpoint 交给钱包；钱包发现本地邮箱凭证过期或临近过期时，会先用钱包身份控制器签名自动续签，再提交新的短期凭证。只有续签失败或 Node 没有可续签的已验证邮箱事实时，才需要回钱包重新验证邮箱。
 - 通行证登录（无插件）使用 Wallet Identity authorization code + PKCE 兑换；Project 从 Node 返回的 DID、钱包地址和凭证完成本地登录。
 
 ## 邮箱密码登录步骤
