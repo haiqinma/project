@@ -248,6 +248,7 @@ class WalletAuthController extends AbstractController
             'identity.basic',
             'identity.wallet',
             'identity.email',
+            'identity.avatar',
         ]));
         $nonce = $this->base64UrlEncode(random_bytes(32));
         $audience = $this->projectOrigin();
@@ -375,6 +376,44 @@ class WalletAuthController extends AbstractController
                 $user->save();
             }
         }
+        foreach (app(IdentityPresentationVerifier::class)->credentialTokens($presentation) as $credential) {
+            try {
+                $claims = app(IdentityCredentialVerifier::class)->verify($credential, $presentation['holder'], 'AvatarCredential');
+            } catch (Throwable) {
+                continue;
+            }
+            $this->applyAvatarClaim($user, (string)data_get($claims, 'vc.credentialSubject.avatarUri', ''));
+        }
+    }
+
+    private function applyAvatarClaim(User $user, string $avatarUri): void
+    {
+        $avatar = $this->normalizeAvatarUri($avatarUri);
+        if ($avatar === '') {
+            return;
+        }
+        $current = trim((string)$user->getRawOriginal('userimg'));
+        if ($current !== '' && !str_contains($current, 'avatar/')) {
+            return;
+        }
+        $user->userimg = $avatar;
+        $user->save();
+    }
+
+    private function normalizeAvatarUri(string $avatarUri): string
+    {
+        $avatarUri = trim($avatarUri);
+        if ($avatarUri === '' || strlen($avatarUri) > 2048) {
+            return '';
+        }
+        if (str_starts_with($avatarUri, 'ipfs://')) {
+            return $avatarUri;
+        }
+        $parts = parse_url($avatarUri);
+        if (!is_array($parts) || !in_array(strtolower((string)($parts['scheme'] ?? '')), ['http', 'https'], true) || empty($parts['host'])) {
+            return '';
+        }
+        return Base::unFillUrl($avatarUri);
     }
 
     private function upsertWalletIdentity(string $did, string $address, string $chainId): UserWallet
@@ -476,7 +515,7 @@ class WalletAuthController extends AbstractController
     private function identityScopes($input): array
     {
         $scopes = is_array($input) ? $input : preg_split('/\s+/', trim((string)$input));
-        $allowed = ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email'];
+        $allowed = ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email', 'identity.avatar'];
         $scopes = array_values(array_unique(array_filter(array_map('trim', $scopes))));
         if (array_diff($scopes, $allowed)) abort(422, '不支持的钱包身份 scope');
         return $scopes;

@@ -58,7 +58,7 @@ return [
     'passport_client_id' => env('PASSPORT_CLIENT_ID', ''),
 
     // 通行证登录申请的授权范围。
-    'passport_scope' => env('PASSPORT_SCOPE', 'identity.basic identity.email identity.wallet'),
+    'passport_scope' => env('PASSPORT_SCOPE', 'identity.basic identity.email identity.wallet identity.avatar'),
 
     // Agent Runtime 内网地址：Project 的 AppStore 兼容入口优先转发到 Agent，由 Agent 再访问 Node Registry。
     'agent_internal_url' => env('AGENT_INTERNAL_URL', env('APPSTORE_INTERNAL_URL', 'http://agent')),
