@@ -3,11 +3,14 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Api\PassportController;
+use App\Http\Controllers\Api\WalletAuthController;
 use App\Models\User;
 use App\Module\Base;
+use App\Services\Wallet\IdentityCredentialVerifier;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Request;
+use RuntimeException;
 use Tests\TestCase;
 
 class TestPassportController extends PassportController
@@ -19,6 +22,14 @@ class TestPassportController extends PassportController
     {
         $this->requests[] = compact('method', 'path', 'payload');
         return array_shift($this->responses) ?? Base::retError('missing test response');
+    }
+}
+
+class ExpiredTestIdentityCredentialVerifier extends IdentityCredentialVerifier
+{
+    public function verify(string $token, string $expectedDid, string $expectedType): array
+    {
+        throw new RuntimeException('identity_credential_expired');
     }
 }
 
@@ -36,6 +47,7 @@ class PassportLoginFlowTest extends TestCase
 
     public function test_creates_pkce_authorization_session_and_keeps_verifier_server_side(): void
     {
+        config()->set('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar');
         $controller = new TestPassportController();
         $controller->responses[] = Base::retSuccess('success', [
             'requestId' => 'passport-request-1',
@@ -53,7 +65,7 @@ class PassportLoginFlowTest extends TestCase
         $this->assertSame('POST', $request['method']);
         $this->assertSame('/api/v1/public/identity/authorize/request', $request['path']);
         $this->assertSame('S256', $request['payload']['codeChallengeMethod']);
-        $this->assertSame(['identity.basic', 'identity.email', 'identity.wallet'], $request['payload']['scopes']);
+        $this->assertSame(['identity.basic', 'identity.email', 'identity.wallet', 'identity.avatar'], $request['payload']['scopes']);
         $this->assertSame($result['data']['session_id'], $request['payload']['state']);
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/', $request['payload']['codeChallenge']);
 
@@ -152,6 +164,54 @@ class PassportLoginFlowTest extends TestCase
         );
         $this->assertSame('', $method->invoke($controller, 'wid_1234567890123456789012'));
         $this->assertSame('', $method->invoke($controller, 'did:yeying:sub_1234567890123456789012'));
+    }
+
+    public function test_wallet_identity_expired_email_credential_does_not_raise_server_error(): void
+    {
+        app()->instance(IdentityCredentialVerifier::class, new ExpiredTestIdentityCredentialVerifier());
+
+        $controller = new WalletAuthController();
+        $method = new \ReflectionMethod(WalletAuthController::class, 'applyIdentityCredentials');
+        $method->setAccessible(true);
+        $user = new User();
+        $user->email = 'wallet-user@wallet.yeying.local';
+        $user->email_verity = 0;
+
+        $method->invoke($controller, $user, [
+            'holder' => 'did:yeying:wid_1234567890123456789012',
+            'credentials' => ['expired-jwt-vc'],
+        ]);
+
+        $this->assertSame('wallet-user@wallet.yeying.local', $user->email);
+        $this->assertSame(0, $user->email_verity);
+    }
+
+    public function test_wallet_identity_login_session_returns_issuer_endpoint(): void
+    {
+        Request::replace(['address' => '0x5c7bf91C493126314bb821C123Dee889FFCa3932']);
+        $controller = new WalletAuthController();
+
+        $result = $controller->login__session();
+
+        $this->assertSame(1, $result['ret']);
+        $this->assertSame('http://node.test', $result['data']['issuerEndpoint']);
+        $this->assertSame(['identity.basic', 'identity.wallet', 'identity.email', 'identity.avatar'], $result['data']['scopes']);
+    }
+
+    public function test_identity_avatar_uri_is_normalized_for_project_storage(): void
+    {
+        $walletController = new WalletAuthController();
+        $walletMethod = new \ReflectionMethod(WalletAuthController::class, 'normalizeAvatarUri');
+        $walletMethod->setAccessible(true);
+
+        $passportController = new TestPassportController();
+        $passportMethod = new \ReflectionMethod(PassportController::class, 'normalizeAvatarUri');
+        $passportMethod->setAccessible(true);
+
+        $this->assertSame('ipfs://bafyavatarcid', $walletMethod->invoke($walletController, ' ipfs://bafyavatarcid '));
+        $this->assertSame('', $walletMethod->invoke($walletController, 'javascript:alert(1)'));
+        $this->assertSame('', $walletMethod->invoke($walletController, str_repeat('a', 2049)));
+        $this->assertSame(Base::unFillUrl('https://avatar.example/person.png'), $passportMethod->invoke($passportController, 'https://avatar.example/person.png'));
     }
 
     private function cacheKey(string $sessionId): string

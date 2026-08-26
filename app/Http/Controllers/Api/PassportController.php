@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Request;
+use Throwable;
 
 /**
  * YeYing 通行证登录接入。
@@ -275,16 +276,32 @@ class PassportController extends AbstractController
         }
 
         $verifiedEmail = null;
+        $avatarUri = null;
         foreach ($credentials as $credential) {
             $type = $credential['type'] ?? '';
             $token = $credential['credential'] ?? '';
             if ($type === 'EmailCredential' && $did !== '' && $token !== '') {
-                $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'EmailCredential');
+                try {
+                    $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'EmailCredential');
+                } catch (Throwable) {
+                    continue;
+                }
                 $verifiedEmail = strtolower(trim((string)data_get($claims, 'vc.credentialSubject.email', '')));
+            }
+            if ($type === 'AvatarCredential' && $did !== '' && $token !== '') {
+                try {
+                    $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'AvatarCredential');
+                } catch (Throwable) {
+                    continue;
+                }
+                $avatarUri = trim((string)data_get($claims, 'vc.credentialSubject.avatarUri', ''));
             }
         }
         if ($verifiedEmail) {
             $this->applyPassportEmailClaim($user, ['email' => $verifiedEmail, 'emailVerified' => true]);
+        }
+        if ($avatarUri) {
+            $this->applyPassportAvatarClaim($user, $avatarUri);
         }
         if (!$user->email || str_ends_with($user->email, '@wallet.yeying.local') || intval($user->email_verity) !== 1) {
             return Base::retError('请先设置并验证邮箱', ['code' => 'wallet_email_required']);
@@ -364,6 +381,35 @@ class PassportController extends AbstractController
         }
     }
 
+    private function applyPassportAvatarClaim(User $user, string $avatarUri): void
+    {
+        $avatar = $this->normalizeAvatarUri($avatarUri);
+        if ($avatar === '') {
+            return;
+        }
+        $current = trim((string)$user->getRawOriginal('userimg'));
+        if ($current !== '' && !str_contains($current, 'avatar/')) {
+            return;
+        }
+        $user->updateInstance(['userimg' => $avatar]);
+    }
+
+    private function normalizeAvatarUri(string $avatarUri): string
+    {
+        $avatarUri = trim($avatarUri);
+        if ($avatarUri === '' || strlen($avatarUri) > 2048) {
+            return '';
+        }
+        if (str_starts_with($avatarUri, 'ipfs://')) {
+            return $avatarUri;
+        }
+        $parts = parse_url($avatarUri);
+        if (!is_array($parts) || !in_array(strtolower((string)($parts['scheme'] ?? '')), ['http', 'https'], true) || empty($parts['host'])) {
+            return '';
+        }
+        return Base::unFillUrl($avatarUri);
+    }
+
     protected function nodeRequest(string $method, string $path, array $payload = []): array
     {
         $baseUrl = $this->nodeBaseUrl();
@@ -433,12 +479,13 @@ class PassportController extends AbstractController
 
     private function scope(): array
     {
-        $scope = trim((string)config('dootask.passport_scope', 'identity.basic identity.email identity.wallet'));
+        $scope = trim((string)config('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar'));
         $aliases = [
             'openid' => 'identity.basic',
             'profile' => 'identity.email',
             'email' => 'identity.email',
             'wallet' => 'identity.wallet',
+            'avatar' => 'identity.avatar',
         ];
         $values = [];
         foreach (preg_split('/\s+/', $scope) ?: [] as $item) {
