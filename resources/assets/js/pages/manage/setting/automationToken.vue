@@ -14,7 +14,7 @@
                     </div>
                     <div class="token-ak">{{token.access_key}}</div>
                     <div class="token-meta">{{$L('授权项目')}}: {{token.projects.map(item => item.name).join('、')}}</div>
-                    <div class="token-meta">{{$L('访问范围')}}: {{$L('仅限所选项目，并沿用当前用户的项目权限')}}</div>
+                    <div class="token-meta">{{$L('访问范围')}}: {{scopeText(token)}}</div>
                     <div class="token-meta">{{$L('过期时间')}}: {{token.expires_at}} · {{$L('最近使用')}}: {{token.last_used_at || $L('从未使用')}}</div>
                 </div>
                 <div class="token-actions">
@@ -35,7 +35,13 @@
                         <Option v-for="project in projects" :key="project.id" :value="project.id">{{project.name}}</Option>
                     </Select>
                 </FormItem>
-                <Alert type="warning" show-icon>{{$L('令牌仅能访问所选项目，并沿用当前用户在项目中的权限。')}}</Alert>
+                <FormItem :label="$L('权限范围')">
+                    <CheckboxGroup v-model="form.scopes">
+                        <Checkbox label="file_cabinet">{{$L('文件柜')}}</Checkbox>
+                    </CheckboxGroup>
+                    <div class="scope-tip">{{$L('不勾选文件柜时，令牌不能调用文件柜 API。')}}</div>
+                </FormItem>
+                <Alert type="warning" show-icon>{{$L('令牌仅能访问所选项目，并沿用当前用户在项目和文件柜中的权限。')}}</Alert>
                 <FormItem :label="$L('有效期')">
                     <Select v-model="form.days">
                         <Option :value="7">7 {{$L('天')}}</Option>
@@ -83,7 +89,7 @@ export default {
     },
     methods: {
         defaultForm() {
-            return {name: '', project_ids: [], days: 30}
+            return {name: '', project_ids: [], scopes: [], days: 30}
         },
         loadData() {
             this.loading = true
@@ -156,6 +162,13 @@ export default {
         statusColor(status) {
             return {active: 'success', disabled: 'default', expired: 'error'}[status] || 'default'
         },
+        scopeText(token) {
+            const labels = [this.$L('项目任务')]
+            if ((token.scopes || []).includes('file_cabinet')) {
+                labels.push(this.$L('文件柜'))
+            }
+            return labels.join('、')
+        },
     },
 }
 </script>
@@ -171,6 +184,7 @@ export default {
     .token-ak, .token-meta { overflow-wrap: anywhere; color: #777; line-height: 22px; }
     .token-ak { color: #333; font-family: monospace; }
     .token-actions { display: flex; gap: 8px; }
+    .scope-tip { margin-top: 4px; color: #999; line-height: 20px; }
     .secret-row { margin-top: 16px; }
     .secret-row > span { display: block; margin-bottom: 6px; font-weight: 600; }
 }

@@ -251,6 +251,15 @@ class ChunkUpload
         self::cleanup($user->userid, $uploadId, $meta['hash'] ?? '');
     }
 
+    public static function sessionSceneForUser(string $uploadId, int $userid): ?string
+    {
+        $meta = self::loadMeta($uploadId);
+        if (!$meta || intval($meta['userid'] ?? 0) !== $userid) {
+            return null;
+        }
+        return strval($meta['scene'] ?? '');
+    }
+
     /**
      * 清理一个 upload_id 的所有状态。
      */

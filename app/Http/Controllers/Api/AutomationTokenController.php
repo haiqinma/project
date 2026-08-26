@@ -47,10 +47,14 @@ class AutomationTokenController extends AbstractController
         AutomationTokenService::authorizeCreation($user, request());
         $name = trim((string) Request::input('name'));
         $projectIds = array_values(array_unique(array_map('intval', (array) Request::input('project_ids', []))));
+        $scopes = (array) Request::input('scopes', []);
         $expiresAt = Carbon::parse((string) Request::input('expires_at', now()->addDays(30)));
 
         if ($name === '' || mb_strlen($name) > 100) {
             throw new ApiException('令牌名称不能为空且不能超过100个字符');
+        }
+        if (!AutomationToken::scopesAreValid($scopes)) {
+            throw new ApiException('请选择有效的权限范围');
         }
         if (!$projectIds || Project::authData($user->userid)->whereIn('projects.id', $projectIds)->count() !== count($projectIds)) {
             throw new ApiException('请选择当前用户参与的有效项目');
@@ -59,7 +63,7 @@ class AutomationTokenController extends AbstractController
             throw new ApiException('令牌有效期必须在90天以内');
         }
 
-        $issued = AutomationTokenService::issue($user->userid, $name, $projectIds, $expiresAt);
+        $issued = AutomationTokenService::issue($user->userid, $name, $projectIds, $expiresAt, $scopes);
         return Base::retSuccess('创建成功', [
             'id' => $issued['token']->id,
             'access_key' => $issued['token']->access_key,
