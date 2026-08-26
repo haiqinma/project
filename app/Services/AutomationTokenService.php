@@ -13,6 +13,7 @@ use App\Models\ProjectTaskFile;
 use App\Models\File;
 use App\Models\FileUser;
 use App\Models\User;
+use App\Module\ChunkUpload;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -20,7 +21,7 @@ use Illuminate\Database\QueryException;
 
 class AutomationTokenService
 {
-    public static function issue(int $userid, string $name, array $projectIds, Carbon $expiresAt): array
+    public static function issue(int $userid, string $name, array $projectIds, Carbon $expiresAt, array $scopes = []): array
     {
         $secret = 'yysk_' . bin2hex(random_bytes(24));
         $token = AutomationToken::createInstance([
@@ -28,9 +29,7 @@ class AutomationTokenService
             'access_key' => 'yyak_' . bin2hex(random_bytes(12)),
             'secret_hash' => hash('sha256', $secret),
             'name' => $name,
-            // Kept for database compatibility. Authorization is now defined by project
-            // scope plus the token owner's existing Project permissions.
-            'scopes' => [],
+            'scopes' => AutomationToken::normalizeScopes($scopes),
             'project_ids' => array_values(array_map('intval', $projectIds)),
             'expires_at' => $expiresAt,
             'status' => AutomationToken::STATUS_ACTIVE,
@@ -183,8 +182,18 @@ class AutomationTokenService
                 return;
             }
         }
-        if (str_starts_with($resource, 'file/') || str_starts_with($resource, 'upload/')) {
+        if (str_starts_with($resource, 'file/')) {
+            if (!$token->allowsScope(AutomationToken::SCOPE_FILE_CABINET)) {
+                self::forbidStandardRequest($token, $request, 'file_cabinet');
+            }
             self::authorizeFileCabinetRequest($token, $request);
+            return;
+        }
+        if (str_starts_with($resource, 'upload/')) {
+            if (!$token->allowsScope(AutomationToken::SCOPE_FILE_CABINET)) {
+                self::forbidStandardRequest($token, $request, 'file_cabinet');
+            }
+            self::authorizeFileCabinetUploadRequest($token, $request, $resource);
             return;
         }
         self::forbidStandardRequest($token, $request);
@@ -209,6 +218,26 @@ class AutomationTokenService
                 self::forbidStandardRequest($token, $request, 'file', $fileId);
             }
         }
+    }
+
+    private static function authorizeFileCabinetUploadRequest(AutomationToken $token, Request $request, string $resource): void
+    {
+        if ($resource === 'upload/init') {
+            if (trim((string) $request->input('scene')) !== 'file_cabinet') {
+                self::forbidStandardRequest($token, $request, 'upload');
+            }
+            return;
+        }
+
+        if (in_array($resource, ['upload/chunk', 'upload/merge', 'upload/cancel'], true)) {
+            $uploadId = trim((string) $request->input('upload_id'));
+            if ($uploadId === '' || ChunkUpload::sessionSceneForUser($uploadId, $token->userid) !== 'file_cabinet') {
+                self::forbidStandardRequest($token, $request, 'upload');
+            }
+            return;
+        }
+
+        self::forbidStandardRequest($token, $request, 'upload');
     }
 
     private static function standardRequestProjectId(Request $request): int
