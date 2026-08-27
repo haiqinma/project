@@ -21,12 +21,36 @@ const vmeditorStyle = () => {
             display: block;
             max-width: 100%;
             height: auto;
+            cursor: zoom-in;
         }
         @media screen {
             .v-md-pre-wrapper {
                 ${$A.dark.utils.reverseFilter()}
             }
         }`);
+}
+
+const previewImageMethods = {
+    handlePreviewImageClick({target}) {
+        const image = target.closest('img');
+        if (!image) {
+            return
+        }
+        const list = [...this.$el.querySelectorAll('img').values()].map(img => {
+            const src = img.currentSrc || img.src;
+            if (img.classList.contains('plantuml-diagram')) {
+                return {
+                    src,
+                    previewMode: 'original',
+                }
+            }
+            return src;
+        })
+        if (list.length === 0) {
+            return
+        }
+        this.$store.dispatch("previewImage", {index: image.currentSrc || image.src, list})
+    }
 }
 
 const editorMixin = {
@@ -54,6 +78,7 @@ const editorMixin = {
     created() {
         vmeditorStyle();
     },
+    methods: previewImageMethods,
 }
 
 const previewMixin = {
@@ -65,6 +90,7 @@ const previewMixin = {
     created() {
         vmeditorStyle();
     },
+    methods: previewImageMethods,
 }
 
 
