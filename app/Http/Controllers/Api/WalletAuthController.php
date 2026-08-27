@@ -307,12 +307,19 @@ class WalletAuthController extends AbstractController
                 'reason' => 'wallet_confirmation_required',
             ]);
         }
+        if ($this->normalizeAddress($wallet->address_normalized ?: $wallet->address) !== $address) {
+            return $this->sdkError('钱包身份与当前钱包地址不匹配', 'identity_wallet_binding_mismatch');
+        }
 
         $user = User::whereUserid($wallet->userid)->first();
         if (!$user || $user->disable_at) {
             return $this->sdkError('钱包绑定的账号不可用', 'wallet_user_disabled');
         }
-        $this->applyIdentityCredentials($user, $presentation);
+        try {
+            $this->applyIdentityCredentials($user, $presentation, $session['scopes']);
+        } catch (Throwable) {
+            return $this->sdkError('钱包身份缺少有效的已验证资料', 'identity_credential_required');
+        }
         if (!$user->email || str_ends_with($user->email, '@wallet.yeying.local') || intval($user->email_verity) !== 1) {
             return $this->sdkError('请先在钱包身份中完成邮箱验证', 'wallet_email_required');
         }
@@ -357,18 +364,33 @@ class WalletAuthController extends AbstractController
         return Base::retSuccess('success', $result);
     }
 
-    private function applyIdentityCredentials(User $user, array $presentation): void
+    private function applyIdentityCredentials(User $user, array $presentation, array $requiredScopes = []): void
     {
-        foreach (app(IdentityPresentationVerifier::class)->credentialTokens($presentation) as $credential) {
+        $tokens = app(IdentityPresentationVerifier::class)->credentialTokens($presentation);
+        $verified = [];
+        $scopeTypes = [
+            'identity.email' => 'EmailCredential',
+            'identity.username' => 'UsernameCredential',
+            'identity.avatar' => 'AvatarCredential',
+        ];
+        foreach ($scopeTypes as $scope => $type) {
+            if (!in_array($scope, $requiredScopes, true)) continue;
+            foreach ($tokens as $credential) {
+                try {
+                    $verified[$type] = app(IdentityCredentialVerifier::class)->verify($credential, $presentation['holder'], $type);
+                    break;
+                } catch (Throwable) {
+                    // Continue until a credential of the required type verifies.
+                }
+            }
+            if (!isset($verified[$type])) throw new \RuntimeException("identity_credential_required:{$type}");
+        }
+        if (isset($verified['EmailCredential'])) {
+            $claims = $verified['EmailCredential'];
             try {
-                $claims = app(IdentityCredentialVerifier::class)->verify($credential, $presentation['holder'], 'EmailCredential');
-            } catch (Throwable) {
-                continue;
-            }
-            $email = strtolower(trim((string)data_get($claims, 'vc.credentialSubject.email', '')));
-            if (!Base::isEmail($email)) {
-                continue;
-            }
+                $email = strtolower(trim((string)data_get($claims, 'vc.credentialSubject.email', '')));
+            } catch (Throwable) { $email = ''; }
+            if (!Base::isEmail($email)) throw new \RuntimeException('identity_email_credential_invalid');
             $current = strtolower(trim((string)$user->email));
             if ($current === '' || str_ends_with($current, '@wallet.yeying.local') || $current === $email) {
                 $user->email = $email;
@@ -376,13 +398,8 @@ class WalletAuthController extends AbstractController
                 $user->save();
             }
         }
-        foreach (app(IdentityPresentationVerifier::class)->credentialTokens($presentation) as $credential) {
-            try {
-                $claims = app(IdentityCredentialVerifier::class)->verify($credential, $presentation['holder'], 'AvatarCredential');
-            } catch (Throwable) {
-                continue;
-            }
-            $this->applyAvatarClaim($user, (string)data_get($claims, 'vc.credentialSubject.avatarUri', ''));
+        if (isset($verified['AvatarCredential'])) {
+            $this->applyAvatarClaim($user, (string)data_get($verified['AvatarCredential'], 'vc.credentialSubject.avatarUri', ''));
         }
     }
 

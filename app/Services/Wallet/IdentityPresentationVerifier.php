@@ -50,6 +50,9 @@ class IdentityPresentationVerifier
         if (!is_array($document)) {
             throw new RuntimeException('identity_document_required');
         }
+        if (($document['id'] ?? '') !== $presentation['holder']) {
+            throw new RuntimeException('identity_document_holder_mismatch');
+        }
         $publicKey = $this->findControllerPublicKey($presentation['holder'], $document, $proof['verificationMethod']);
         if ($publicKey === '') {
             throw new RuntimeException('identity_presentation_key_missing');
@@ -87,7 +90,10 @@ class IdentityPresentationVerifier
                 continue;
             }
             $controllerId = (string)($controller['controllerId'] ?? $controller['id'] ?? '');
-            if ($method === "{$holder}#{$controllerId}") {
+            $purposes = is_array($controller['purposes'] ?? null) ? $controller['purposes'] : [];
+            if ($method === "{$holder}#{$controllerId}"
+                && ($controller['status'] ?? '') === 'active'
+                && in_array('authentication', $purposes, true)) {
                 $publicKey = $controller['publicKey'] ?? '';
                 if (is_array($publicKey)) {
                     return (string)($publicKey['x'] ?? '');

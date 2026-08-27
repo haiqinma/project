@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\WalletAuthController;
 use App\Models\User;
 use App\Module\Base;
 use App\Services\Wallet\IdentityCredentialVerifier;
+use App\Services\Wallet\IdentityPresentationVerifier;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Request;
@@ -184,6 +185,77 @@ class PassportLoginFlowTest extends TestCase
 
         $this->assertSame('wallet-user@wallet.yeying.local', $user->email);
         $this->assertSame(0, $user->email_verity);
+    }
+
+    public function test_wallet_identity_required_scope_rejects_missing_credential(): void
+    {
+        app()->instance(IdentityCredentialVerifier::class, new ExpiredTestIdentityCredentialVerifier());
+        $controller = new WalletAuthController();
+        $method = new \ReflectionMethod(WalletAuthController::class, 'applyIdentityCredentials');
+        $method->setAccessible(true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('identity_credential_required:EmailCredential');
+        $method->invoke($controller, new User(), [
+            'holder' => 'did:yeying:wid_1234567890123456789012',
+            'credentials' => ['expired-jwt-vc'],
+        ], ['identity.email']);
+    }
+
+    public function test_identity_document_must_belong_to_presentation_holder(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('identity_document_holder_mismatch');
+        (new IdentityPresentationVerifier())->verify([
+            'version' => 1,
+            'holder' => 'did:yeying:wid_1234567890123456789012',
+            'audience' => 'http://project.test',
+            'nonce' => 'nonce',
+            'issuedAt' => now()->subSecond()->toIso8601String(),
+            'expiresAt' => now()->addMinute()->toIso8601String(),
+            'scopes' => ['identity.basic'],
+            'identityDocument' => [
+                'id' => 'did:yeying:wid_abcdefghijklmnopqrstuvwxyz',
+                'controllers' => [],
+            ],
+            'proof' => [
+                'type' => 'YeyingIdentityPresentationProofV1',
+                'purpose' => 'authentication',
+                'verificationMethod' => 'did:yeying:wid_1234567890123456789012#controller',
+                'proofValue' => 'invalid',
+            ],
+        ], [
+            'audience' => 'http://project.test',
+            'nonce' => 'nonce',
+            'scopes' => ['identity.basic'],
+        ]);
+    }
+
+    public function test_identity_trust_bundle_is_loaded_from_configured_directory(): void
+    {
+        $directory = storage_path('framework/testing/identity-trust-' . Str::uuid());
+        mkdir($directory, 0700, true);
+        $metadata = json_encode(['issuer' => 'did:web:node.test', 'jwks_uri' => 'https://node.test/.well-known/jwks.json'], JSON_UNESCAPED_SLASHES);
+        $jwks = json_encode(['keys' => [['kty' => 'OKP', 'crv' => 'Ed25519', 'alg' => 'EdDSA', 'kid' => 'test', 'x' => str_repeat('a', 43)]]], JSON_UNESCAPED_SLASHES);
+        file_put_contents("{$directory}/issuer-metadata.json", $metadata);
+        file_put_contents("{$directory}/jwks.json", $jwks);
+        file_put_contents("{$directory}/manifest.json", json_encode([
+            'issuer' => 'did:web:node.test',
+            'metadataSha256' => hash('sha256', $metadata),
+            'jwksSha256' => hash('sha256', $jwks),
+        ]));
+        config()->set('dootask.passport_identity_trust_dir', $directory);
+        $method = new \ReflectionMethod(IdentityCredentialVerifier::class, 'trustBundle');
+        $method->setAccessible(true);
+
+        try {
+            $bundle = $method->invoke(new IdentityCredentialVerifier());
+            $this->assertSame('did:web:node.test', $bundle['issuer']);
+            $this->assertSame('test', $bundle['jwks']['keys'][0]['kid']);
+        } finally {
+            foreach (glob("{$directory}/*") ?: [] as $file) unlink($file);
+            rmdir($directory);
+        }
     }
 
     public function test_wallet_identity_login_session_returns_issuer_endpoint(): void

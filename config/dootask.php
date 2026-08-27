@@ -54,6 +54,9 @@ return [
     // YeYing Passport / Node 登录中心。为空时登录二维码回退到旧的 Project 本地二维码。
     'passport_node_url' => env('PASSPORT_NODE_URL', ''),
 
+    // Directory populated by the Node trust-bundle synchronization job.
+    'passport_identity_trust_dir' => env('PASSPORT_IDENTITY_TRUST_DIR', '/opt/data/node'),
+
     // 当前 Project 在 Node 中登记的应用 ID。
     'passport_client_id' => env('PASSPORT_CLIENT_ID', ''),
 
