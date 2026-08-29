@@ -92,6 +92,7 @@ class WalletAuthController extends AbstractController
                     $type = $credential['type'] ?? '';
                     if ($type === 'EmailCredential') app(IdentityCredentialVerifier::class)->verify($credential['credential'] ?? '', $identityResult['did'], 'EmailCredential');
                     if ($type === 'UsernameCredential') app(IdentityCredentialVerifier::class)->verify($credential['credential'] ?? '', $identityResult['did'], 'UsernameCredential');
+                    if ($type === 'WalletAccountCredential') app(IdentityCredentialVerifier::class)->verify($credential['credential'] ?? '', $identityResult['did'], 'WalletAccountCredential');
                 }
             } catch (Throwable) {
                 return Base::retError('请先在钱包身份中完成邮箱验证', ['code' => 'wallet_email_required']);
@@ -240,16 +241,17 @@ class WalletAuthController extends AbstractController
 
     public function login__session()
     {
-        $address = $this->normalizeAddress(Request::input('address'));
+        $address = $this->normalizeAddress(Request::input('address'), true);
         $chainId = trim((string)config('dootask.wallet_chain_id', '1'));
         $this->validateChain($chainId);
         $sessionId = (string)Str::uuid();
-        $scopes = $this->identityScopes(Request::input('identity_scopes', [
+        $scopes = $this->projectIdentityScopes($this->identityScopes(Request::input('identity_scopes', [
             'identity.basic',
+            'identity.username',
             'identity.wallet',
             'identity.email',
             'identity.avatar',
-        ]));
+        ])));
         $nonce = $this->base64UrlEncode(random_bytes(32));
         $audience = $this->projectOrigin();
         Cache::put($this->identityLoginKey($sessionId), [
@@ -273,9 +275,9 @@ class WalletAuthController extends AbstractController
     public function login__verify()
     {
         $sessionId = trim((string)Request::input('session_id'));
-        $address = $this->normalizeAddress(Request::input('address'));
+        $address = $this->normalizeAddress(Request::input('address'), true);
         $session = $sessionId ? Cache::pull($this->identityLoginKey($sessionId)) : null;
-        if (!is_array($session) || ($session['address'] ?? '') !== $address) {
+        if (!is_array($session) || (($session['address'] ?? '') !== '' && ($session['address'] ?? '') !== $address)) {
             return $this->sdkError('钱包身份登录会话已过期或无效', 'wallet_identity_session_invalid');
         }
         $presentation = Request::input('presentation', Request::input('identity_presentation'));
@@ -289,13 +291,19 @@ class WalletAuthController extends AbstractController
                 'nonce' => $session['nonce'],
                 'scopes' => $session['scopes'],
             ]);
-        } catch (Throwable) {
-            return $this->sdkError('缺少钱包身份授权证明', 'identity_presentation_required');
+        } catch (Throwable $exception) {
+            $reason = trim($exception->getMessage());
+            if ($reason === '') $reason = 'identity_presentation_invalid';
+            return $this->sdkError('钱包身份授权证明无效', $reason);
         }
         $proofAddress = $this->normalizeAddress($verifier->walletAddress($presentation));
-        if ($proofAddress !== $address) {
+        if ($proofAddress === '') {
+            return $this->sdkError('钱包身份未返回有效地址证明', 'identity_wallet_proof_missing');
+        }
+        if ($address !== '' && $proofAddress !== $address) {
             return $this->sdkError('钱包身份授权地址不匹配', 'identity_wallet_mismatch');
         }
+        $address = $proofAddress;
         $did = $this->normalizeDid($presentation['holder'] ?? '');
         if ($did === '') {
             return $this->sdkError('钱包身份服务返回异常', 'wallet_identity_missing');
@@ -369,6 +377,7 @@ class WalletAuthController extends AbstractController
         $tokens = app(IdentityPresentationVerifier::class)->credentialTokens($presentation);
         $verified = [];
         $scopeTypes = [
+            'identity.wallet' => 'WalletAccountCredential',
             'identity.email' => 'EmailCredential',
             'identity.username' => 'UsernameCredential',
             'identity.avatar' => 'AvatarCredential',
@@ -385,6 +394,17 @@ class WalletAuthController extends AbstractController
             }
             if (!isset($verified[$type])) throw new \RuntimeException("identity_credential_required:{$type}");
         }
+        if (isset($verified['WalletAccountCredential'])) {
+            $claim = data_get($verified['WalletAccountCredential'], 'vc.credentialSubject', []);
+            $proof = $presentation['walletProof'] ?? [];
+            $claimChain = trim((string)($claim['chainKey'] ?? ''));
+            $proofChain = trim((string)($proof['chainKey'] ?? ''));
+            $claimAddress = $this->normalizeAddress($claim['address'] ?? '');
+            $proofAddress = $this->normalizeAddress($proof['address'] ?? '');
+            if ($claimChain === '' || $claimChain !== $proofChain || $claimAddress === '' || $claimAddress !== $proofAddress) {
+                throw new \RuntimeException('identity_wallet_credential_mismatch');
+            }
+        }
         if (isset($verified['EmailCredential'])) {
             $claims = $verified['EmailCredential'];
             try {
@@ -398,9 +418,27 @@ class WalletAuthController extends AbstractController
                 $user->save();
             }
         }
+        if (isset($verified['UsernameCredential'])) {
+            $this->applyUsernameClaim($user, (string)data_get($verified['UsernameCredential'], 'vc.credentialSubject.username', ''));
+        }
         if (isset($verified['AvatarCredential'])) {
             $this->applyAvatarClaim($user, (string)data_get($verified['AvatarCredential'], 'vc.credentialSubject.avatarUri', ''));
         }
+    }
+
+    private function applyUsernameClaim(User $user, string $username): void
+    {
+        $username = trim($username);
+        if (mb_strlen($username) < 2 || mb_strlen($username) > 20) {
+            return;
+        }
+        if ($user->nickname === $username) {
+            return;
+        }
+        $user->nickname = $username;
+        $user->az = Base::getFirstCharter($username);
+        $user->pinyin = Base::cn2pinyin($username);
+        $user->save();
     }
 
     private function applyAvatarClaim(User $user, string $avatarUri): void
@@ -481,9 +519,10 @@ class WalletAuthController extends AbstractController
         return 'wallet_identity_login:' . hash('sha256', $sessionId);
     }
 
-    private function normalizeAddress($address): string
+    private function normalizeAddress($address, bool $allowEmpty = false): string
     {
         $address = trim((string)$address);
+        if ($allowEmpty && $address === '') return '';
         if (!preg_match('/^0x[a-fA-F0-9]{40}$/', $address)) {
             abort(422, '钱包地址格式无效');
         }
@@ -535,6 +574,16 @@ class WalletAuthController extends AbstractController
         $allowed = ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email', 'identity.avatar'];
         $scopes = array_values(array_unique(array_filter(array_map('trim', $scopes))));
         if (array_diff($scopes, $allowed)) abort(422, '不支持的钱包身份 scope');
+        return $scopes;
+    }
+
+    private function projectIdentityScopes(array $scopes): array
+    {
+        foreach (['identity.basic', 'identity.username', 'identity.wallet', 'identity.email', 'identity.avatar'] as $scope) {
+            if (!in_array($scope, $scopes, true)) {
+                $scopes[] = $scope;
+            }
+        }
         return $scopes;
     }
 

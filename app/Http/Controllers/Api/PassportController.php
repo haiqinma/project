@@ -276,10 +276,19 @@ class PassportController extends AbstractController
         }
 
         $verifiedEmail = null;
+        $username = null;
         $avatarUri = null;
         foreach ($credentials as $credential) {
             $type = $credential['type'] ?? '';
             $token = $credential['credential'] ?? '';
+            if ($type === 'UsernameCredential' && $did !== '' && $token !== '') {
+                try {
+                    $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'UsernameCredential');
+                } catch (Throwable) {
+                    continue;
+                }
+                $username = trim((string)data_get($claims, 'vc.credentialSubject.username', ''));
+            }
             if ($type === 'EmailCredential' && $did !== '' && $token !== '') {
                 try {
                     $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'EmailCredential');
@@ -299,6 +308,9 @@ class PassportController extends AbstractController
         }
         if ($verifiedEmail) {
             $this->applyPassportEmailClaim($user, ['email' => $verifiedEmail, 'emailVerified' => true]);
+        }
+        if ($username) {
+            $this->applyPassportUsernameClaim($user, $username);
         }
         if ($avatarUri) {
             $this->applyPassportAvatarClaim($user, $avatarUri);
@@ -379,6 +391,22 @@ class PassportController extends AbstractController
                 'email_verity' => 1,
             ]);
         }
+    }
+
+    private function applyPassportUsernameClaim(User $user, string $username): void
+    {
+        $username = trim($username);
+        if (mb_strlen($username) < 2 || mb_strlen($username) > 20) {
+            return;
+        }
+        if ($user->nickname === $username) {
+            return;
+        }
+        $user->updateInstance([
+            'nickname' => $username,
+            'az' => Base::getFirstCharter($username),
+            'pinyin' => Base::cn2pinyin($username),
+        ]);
     }
 
     private function applyPassportAvatarClaim(User $user, string $avatarUri): void
@@ -479,11 +507,12 @@ class PassportController extends AbstractController
 
     private function scope(): array
     {
-        $scope = trim((string)config('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar'));
+        $scope = trim((string)config('dootask.passport_scope', 'identity.basic identity.username identity.email identity.wallet identity.avatar'));
         $aliases = [
             'openid' => 'identity.basic',
             'profile' => 'identity.email',
             'email' => 'identity.email',
+            'username' => 'identity.username',
             'wallet' => 'identity.wallet',
             'avatar' => 'identity.avatar',
         ];
@@ -494,6 +523,11 @@ class PassportController extends AbstractController
                 continue;
             }
             $values[] = $aliases[$item] ?? $item;
+        }
+        foreach (['identity.basic', 'identity.username', 'identity.email', 'identity.wallet', 'identity.avatar'] as $item) {
+            if (!in_array($item, $values, true)) {
+                $values[] = $item;
+            }
         }
         return array_values(array_unique($values));
     }

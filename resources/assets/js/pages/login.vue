@@ -738,7 +738,6 @@ export default {
                     baseUrl: $A.apiUrl('public/auth'),
                     credentials: 'include',
                     storeToken: false,
-                    scopes: ['identity.basic', 'identity.wallet', 'identity.username', 'identity.email', 'identity.avatar'],
                 });
                 const payload = await this.walletRequest('users/info', {
                     headers: {'dootask-token': result.token},

@@ -48,7 +48,7 @@ class PassportLoginFlowTest extends TestCase
 
     public function test_creates_pkce_authorization_session_and_keeps_verifier_server_side(): void
     {
-        config()->set('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar');
+        config()->set('dootask.passport_scope', 'identity.basic identity.username identity.email identity.wallet identity.avatar');
         $controller = new TestPassportController();
         $controller->responses[] = Base::retSuccess('success', [
             'requestId' => 'passport-request-1',
@@ -66,13 +66,28 @@ class PassportLoginFlowTest extends TestCase
         $this->assertSame('POST', $request['method']);
         $this->assertSame('/api/v1/public/identity/authorize/request', $request['path']);
         $this->assertSame('S256', $request['payload']['codeChallengeMethod']);
-        $this->assertSame(['identity.basic', 'identity.email', 'identity.wallet', 'identity.avatar'], $request['payload']['scopes']);
+        $this->assertSame(['identity.basic', 'identity.username', 'identity.email', 'identity.wallet', 'identity.avatar'], $request['payload']['scopes']);
         $this->assertSame($result['data']['session_id'], $request['payload']['state']);
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/', $request['payload']['codeChallenge']);
 
         $cache = Cache::get($this->cacheKey($result['data']['session_id']));
         $this->assertSame('passport-request-1', $cache['request_id']);
         $this->assertNotEmpty($cache['code_verifier']);
+    }
+
+    public function test_passport_scope_always_includes_project_identity_username(): void
+    {
+        config()->set('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar');
+        $controller = new TestPassportController();
+        $controller->responses[] = Base::retSuccess('success', [
+            'requestId' => 'passport-request-username',
+            'verifyUrl' => '/identity/authorize?requestId=passport-request-username',
+            'status' => 'pending',
+        ]);
+
+        $controller->login__session();
+
+        $this->assertContains('identity.username', $controller->requests[0]['payload']['scopes']);
     }
 
     public function test_reports_scanned_only_after_node_approves_the_request(): void
@@ -267,7 +282,7 @@ class PassportLoginFlowTest extends TestCase
 
         $this->assertSame(1, $result['ret']);
         $this->assertSame('http://node.test', $result['data']['issuerEndpoint']);
-        $this->assertSame(['identity.basic', 'identity.wallet', 'identity.email', 'identity.avatar'], $result['data']['scopes']);
+        $this->assertSame(['identity.basic', 'identity.username', 'identity.wallet', 'identity.email', 'identity.avatar'], $result['data']['scopes']);
     }
 
     public function test_identity_avatar_uri_is_normalized_for_project_storage(): void
