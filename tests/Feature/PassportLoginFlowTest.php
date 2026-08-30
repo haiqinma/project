@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\WalletAuthController;
 use App\Models\User;
 use App\Module\Base;
 use App\Services\Wallet\IdentityCredentialVerifier;
+use App\Services\Wallet\IdentityPresentationVerifier;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Request;
@@ -47,7 +48,7 @@ class PassportLoginFlowTest extends TestCase
 
     public function test_creates_pkce_authorization_session_and_keeps_verifier_server_side(): void
     {
-        config()->set('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar');
+        config()->set('dootask.passport_scope', 'identity.basic identity.username identity.email identity.wallet identity.avatar');
         $controller = new TestPassportController();
         $controller->responses[] = Base::retSuccess('success', [
             'requestId' => 'passport-request-1',
@@ -65,13 +66,28 @@ class PassportLoginFlowTest extends TestCase
         $this->assertSame('POST', $request['method']);
         $this->assertSame('/api/v1/public/identity/authorize/request', $request['path']);
         $this->assertSame('S256', $request['payload']['codeChallengeMethod']);
-        $this->assertSame(['identity.basic', 'identity.email', 'identity.wallet', 'identity.avatar'], $request['payload']['scopes']);
+        $this->assertSame(['identity.basic', 'identity.username', 'identity.email', 'identity.wallet', 'identity.avatar'], $request['payload']['scopes']);
         $this->assertSame($result['data']['session_id'], $request['payload']['state']);
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/', $request['payload']['codeChallenge']);
 
         $cache = Cache::get($this->cacheKey($result['data']['session_id']));
         $this->assertSame('passport-request-1', $cache['request_id']);
         $this->assertNotEmpty($cache['code_verifier']);
+    }
+
+    public function test_passport_scope_always_includes_project_identity_username(): void
+    {
+        config()->set('dootask.passport_scope', 'identity.basic identity.email identity.wallet identity.avatar');
+        $controller = new TestPassportController();
+        $controller->responses[] = Base::retSuccess('success', [
+            'requestId' => 'passport-request-username',
+            'verifyUrl' => '/identity/authorize?requestId=passport-request-username',
+            'status' => 'pending',
+        ]);
+
+        $controller->login__session();
+
+        $this->assertContains('identity.username', $controller->requests[0]['payload']['scopes']);
     }
 
     public function test_reports_scanned_only_after_node_approves_the_request(): void
@@ -186,6 +202,77 @@ class PassportLoginFlowTest extends TestCase
         $this->assertSame(0, $user->email_verity);
     }
 
+    public function test_wallet_identity_required_scope_rejects_missing_credential(): void
+    {
+        app()->instance(IdentityCredentialVerifier::class, new ExpiredTestIdentityCredentialVerifier());
+        $controller = new WalletAuthController();
+        $method = new \ReflectionMethod(WalletAuthController::class, 'applyIdentityCredentials');
+        $method->setAccessible(true);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('identity_credential_required:EmailCredential');
+        $method->invoke($controller, new User(), [
+            'holder' => 'did:yeying:wid_1234567890123456789012',
+            'credentials' => ['expired-jwt-vc'],
+        ], ['identity.email']);
+    }
+
+    public function test_identity_document_must_belong_to_presentation_holder(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('identity_document_holder_mismatch');
+        (new IdentityPresentationVerifier())->verify([
+            'version' => 1,
+            'holder' => 'did:yeying:wid_1234567890123456789012',
+            'audience' => 'http://project.test',
+            'nonce' => 'nonce',
+            'issuedAt' => now()->subSecond()->toIso8601String(),
+            'expiresAt' => now()->addMinute()->toIso8601String(),
+            'scopes' => ['identity.basic'],
+            'identityDocument' => [
+                'id' => 'did:yeying:wid_abcdefghijklmnopqrstuvwxyz',
+                'controllers' => [],
+            ],
+            'proof' => [
+                'type' => 'YeyingIdentityPresentationProofV1',
+                'purpose' => 'authentication',
+                'verificationMethod' => 'did:yeying:wid_1234567890123456789012#controller',
+                'proofValue' => 'invalid',
+            ],
+        ], [
+            'audience' => 'http://project.test',
+            'nonce' => 'nonce',
+            'scopes' => ['identity.basic'],
+        ]);
+    }
+
+    public function test_identity_trust_bundle_is_loaded_from_configured_directory(): void
+    {
+        $directory = storage_path('framework/testing/identity-trust-' . Str::uuid());
+        mkdir($directory, 0700, true);
+        $metadata = json_encode(['issuer' => 'did:web:node.test', 'jwks_uri' => 'https://node.test/.well-known/jwks.json'], JSON_UNESCAPED_SLASHES);
+        $jwks = json_encode(['keys' => [['kty' => 'OKP', 'crv' => 'Ed25519', 'alg' => 'EdDSA', 'kid' => 'test', 'x' => str_repeat('a', 43)]]], JSON_UNESCAPED_SLASHES);
+        file_put_contents("{$directory}/issuer-metadata.json", $metadata);
+        file_put_contents("{$directory}/jwks.json", $jwks);
+        file_put_contents("{$directory}/manifest.json", json_encode([
+            'issuer' => 'did:web:node.test',
+            'metadataSha256' => hash('sha256', $metadata),
+            'jwksSha256' => hash('sha256', $jwks),
+        ]));
+        config()->set('dootask.passport_identity_trust_dir', $directory);
+        $method = new \ReflectionMethod(IdentityCredentialVerifier::class, 'trustBundle');
+        $method->setAccessible(true);
+
+        try {
+            $bundle = $method->invoke(new IdentityCredentialVerifier());
+            $this->assertSame('did:web:node.test', $bundle['issuer']);
+            $this->assertSame('test', $bundle['jwks']['keys'][0]['kid']);
+        } finally {
+            foreach (glob("{$directory}/*") ?: [] as $file) unlink($file);
+            rmdir($directory);
+        }
+    }
+
     public function test_wallet_identity_login_session_returns_issuer_endpoint(): void
     {
         Request::replace(['address' => '0x5c7bf91C493126314bb821C123Dee889FFCa3932']);
@@ -195,7 +282,7 @@ class PassportLoginFlowTest extends TestCase
 
         $this->assertSame(1, $result['ret']);
         $this->assertSame('http://node.test', $result['data']['issuerEndpoint']);
-        $this->assertSame(['identity.basic', 'identity.wallet', 'identity.email', 'identity.avatar'], $result['data']['scopes']);
+        $this->assertSame(['identity.basic', 'identity.username', 'identity.wallet', 'identity.email', 'identity.avatar'], $result['data']['scopes']);
     }
 
     public function test_identity_avatar_uri_is_normalized_for_project_storage(): void

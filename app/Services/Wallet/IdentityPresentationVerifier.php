@@ -50,6 +50,10 @@ class IdentityPresentationVerifier
         if (!is_array($document)) {
             throw new RuntimeException('identity_document_required');
         }
+        if (($document['id'] ?? '') !== $presentation['holder']) {
+            throw new RuntimeException('identity_document_holder_mismatch');
+        }
+        $this->verifyIdentityDocument($document, $presentation['holder']);
         $publicKey = $this->findControllerPublicKey($presentation['holder'], $document, $proof['verificationMethod']);
         if ($publicKey === '') {
             throw new RuntimeException('identity_presentation_key_missing');
@@ -87,7 +91,10 @@ class IdentityPresentationVerifier
                 continue;
             }
             $controllerId = (string)($controller['controllerId'] ?? $controller['id'] ?? '');
-            if ($method === "{$holder}#{$controllerId}") {
+            $purposes = is_array($controller['purposes'] ?? null) ? $controller['purposes'] : [];
+            if ($method === "{$holder}#{$controllerId}"
+                && ($controller['status'] ?? '') === 'active'
+                && in_array('authentication', $purposes, true)) {
                 $publicKey = $controller['publicKey'] ?? '';
                 if (is_array($publicKey)) {
                     return (string)($publicKey['x'] ?? '');
@@ -96,6 +103,41 @@ class IdentityPresentationVerifier
             }
         }
         return '';
+    }
+
+    private function verifyIdentityDocument(array $document, string $holder): void
+    {
+        $documentProof = $document['proof'] ?? null;
+        if (!is_array($documentProof)
+            || ($documentProof['type'] ?? '') !== 'YeyingIdentityDocumentProofV1'
+            || ($documentProof['purpose'] ?? '') !== 'manage'
+            || !is_string($documentProof['verificationMethod'] ?? null)
+            || !is_string($documentProof['proofValue'] ?? null)) {
+            throw new RuntimeException('identity_document_proof_invalid');
+        }
+        $method = $documentProof['verificationMethod'];
+        $publicKey = '';
+        foreach (($document['controllers'] ?? []) as $controller) {
+            if (!is_array($controller)) continue;
+            $controllerId = (string)($controller['controllerId'] ?? $controller['id'] ?? '');
+            $purposes = is_array($controller['purposes'] ?? null) ? $controller['purposes'] : [];
+            if ($method === "{$holder}#{$controllerId}"
+                && ($controller['status'] ?? '') === 'active'
+                && in_array('manage', $purposes, true)) {
+                $publicKey = is_array($controller['publicKey'] ?? null)
+                    ? (string)($controller['publicKey']['x'] ?? '')
+                    : (string)($controller['publicKey'] ?? '');
+                break;
+            }
+        }
+        if ($publicKey === '') throw new RuntimeException('identity_document_key_missing');
+        $unsigned = $document;
+        unset($unsigned['proof']);
+        if (!sodium_crypto_sign_verify_detached(
+            $this->base64UrlDecode($documentProof['proofValue']),
+            $this->canonicalize($unsigned),
+            $this->publicKeyBytes($publicKey)
+        )) throw new RuntimeException('identity_document_proof_invalid');
     }
 
     private function publicKeyBytes(string $publicKey): string

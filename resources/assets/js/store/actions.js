@@ -1056,7 +1056,9 @@ export default {
             } catch (e) {
                 console.log(e);
             }
-            dispatch("handleClearCache", {}).then(() => {
+            // Pass an explicit empty user record so a cached userInfo entry
+            // cannot repopulate the token during the cleanup read.
+            dispatch("handleClearCache", {userid: 0, token: ''}).then(() => {
                 let from = ["/", "/login"].includes(window.location.pathname) ? "" : encodeURIComponent(window.location.href);
                 if (appendFrom === false) {
                     from = null;

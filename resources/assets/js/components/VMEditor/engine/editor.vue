@@ -1,5 +1,5 @@
 <template>
-    <div class="vmeditor-wrapper">
+    <div class="vmeditor-wrapper" @click.capture="handlePreviewImageClick">
         <v-md-editor
             ref="editor"
             class="vmeditor-editor"

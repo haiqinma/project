@@ -47,80 +47,6 @@
                             @on-clear="setServerUrl('')"/>
 
                         <Button v-if="loginType=='login'" type="primary" class="wallet-login-button" :loading="walletLoading" size="large" long @click="onWalletLogin">{{$L('钱包登录')}}</Button>
-
-                        <Button v-if="loginType=='login'" type="text" class="email-login-toggle" long @click="emailLoginExpanded=!emailLoginExpanded">
-                            {{$L('邮箱密码登录')}}
-                            <Icon :type="emailLoginExpanded ? 'ios-arrow-up' : 'ios-arrow-down'"/>
-                        </Button>
-
-                        <transition name="login-expand">
-                            <div v-if="emailLoginExpanded || loginType=='reg'" class="email-login-panel">
-                                <Input
-                                    v-model="email"
-                                    ref="email"
-                                    prefix="ios-mail-outline"
-                                    :placeholder="$L('输入您的电子邮件')"
-                                    type="email"
-                                    size="large"
-                                    @on-keydown="onLoginKeydown"
-                                    @on-blur="onBlur"
-                                    clearable/>
-
-                                <Input
-                                    v-model="password"
-                                    ref="password"
-                                    prefix="ios-lock-outline"
-                                    :placeholder="$L('输入您的密码')"
-                                    type="password"
-                                    size="large"
-                                    @on-keydown="onLoginKeydown"
-                                    clearable/>
-
-                                <Input
-                                    v-if="loginType=='reg'"
-                                    v-model="password2"
-                                    ref="password2"
-                                    prefix="ios-lock-outline"
-                                    :placeholder="$L('输入确认密码')"
-                                    type="password"
-                                    size="large"
-                                    @on-keydown="onLoginKeydown"
-                                    clearable/>
-                                <Input
-                                    v-if="loginType=='reg' && needInvite"
-                                    v-model="invite"
-                                    ref="invite"
-                                    class="login-code"
-                                    :placeholder="$L('请输入注册邀请码')"
-                                    type="text"
-                                    size="large"
-                                    @on-keydown="onLoginKeydown"
-                                    clearable><span slot="prepend">&nbsp;{{$L('邀请码')}}&nbsp;</span></Input>
-
-                                <Input
-                                    v-if="loginType=='login' && codeNeed"
-                                    v-model="code"
-                                    ref="code"
-                                    class="login-code"
-                                    :placeholder="$L('输入图形验证码')"
-                                    type="text"
-                                    size="large"
-                                    @on-keydown="onLoginKeydown"
-                                    clearable>
-                                    <Icon type="ios-checkmark-circle-outline" class="login-icon" slot="prepend"></Icon>
-                                    <div slot="append" class="login-code-end" @click="refreshCode">
-                                        <div v-if="codeLoad > 0" class="code-load"><Loading/></div>
-                                        <span v-else-if="codeUrl === 'error'" class="code-error">{{$L('加载失败')}}</span>
-                                        <img v-else :src="codeUrl"/>
-                                    </div>
-                                </Input>
-
-                                <Button :type="loginType=='reg' ? 'primary' : 'default'" :loading="loadIng > 0 || loginJump" size="large" long @click="onLogin">{{loginText}}</Button>
-                            </div>
-                        </transition>
-
-                        <div v-if="loginType=='reg'" class="login-switch">{{$L('已经有帐号？')}} <a href="javascript:void(0)" @click="loginType='login'">{{$L('登录帐号')}}</a></div>
-                        <div v-else class="login-switch">{{$L('还没有帐号？')}} <a href="javascript:void(0)" @click="loginType='reg'">{{$L('注册帐号')}}</a></div>
                     </div>
                 </transition>
             </div>
@@ -163,7 +89,6 @@
                         </Dropdown>
                     </DropdownMenu>
                 </Dropdown>
-                <div class="login-forgot">{{$L('忘记密码了？')}} <a href="javascript:void(0)" @click="forgotPassword">{{$L('重置密码')}}</a></div>
             </div>
         </div>
 
@@ -257,7 +182,7 @@ export default {
     },
 
     activated() {
-        this.loginType = this.$route.query.type === 'reg' ? 'reg' : 'login'
+        this.loginType = 'login'
         //
         this.getDemoAccount();
     },
@@ -283,17 +208,17 @@ export default {
         },
 
         welcomeTitle() {
-            return this.loginMode == 'qrcode' ? this.$L('通行证扫码登录') : this.$L('夜莺项目管理')
+            return this.$L('Project')
         },
 
         subTitle() {
             if (this.loginMode == 'qrcode') {
-                return this.$L('请使用手机相机或夜莺钱包扫码确认登录。')
+                return this.$L('使用通行证完成身份验证后进入 Project。')
             }
             if (this.loginType=='reg') {
                 return this.$L('输入您的信息以创建帐户。')
             }
-            return this.$L('输入您的凭证以访问您的帐户。')
+            return this.$L('使用夜莺钱包授权钱包身份，Project 将读取已验证邮箱后进入工作区。')
         },
 
         loginText() {
@@ -312,12 +237,8 @@ export default {
     },
 
     watch: {
-        '$route' ({query}) {
-            if (query.type=='reg'){
-                this.$nextTick(()=>{
-                    this.loginType = "reg"
-                })
-            }
+        '$route' () {
+            this.loginType = 'login'
         },
         loginMode() {
             if (this.loginMode !== 'qrcode') {
