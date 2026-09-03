@@ -48,6 +48,22 @@ return [
     // Direct plantuml/plantuml-server:jetty URLs should point to the server root, not /plantuml.
     'plantuml_server_url' => env('PLANTUML_SERVER_URL', ''),
 
+    // Browser-accessible OnlyOffice Docs API script. Keep empty to use the same-origin /office proxy.
+    // For host-run local development with a standalone Document Server, use
+    // http://127.0.0.1:18088/web-apps/apps/api/documents/api.js.
+    'office_enabled' => env('OFFICE_ENABLED'),
+    'office_public_api_url' => env('OFFICE_PUBLIC_API_URL', ''),
+
+    // Internal API base URL used by OnlyOffice Document Server to read and save Project files.
+    // Container deployments normally keep http://nginx/api. Host-run local development on Docker
+    // Desktop can use http://host.docker.internal:2222/api.
+    'office_internal_api_base' => env('OFFICE_INTERNAL_API_BASE', 'http://nginx/api'),
+
+    // Internal OnlyOffice Document Server base URL used by Project to download edited files
+    // from the save callback. Container deployments normally keep http://nginx. Host-run
+    // local development can use http://127.0.0.1:18088.
+    'office_internal_document_base' => env('OFFICE_INTERNAL_DOCUMENT_BASE', 'http://nginx'),
+
     // 在线授权：YeYing AppStore 授权中心地址（OnlineLicense；测试可指向开发环境）
     'online_license_appstore_url' => env('ONLINE_LICENSE_APPSTORE_URL', 'https://appstore.yeying.pub'),
 
@@ -55,7 +71,8 @@ return [
     'passport_node_url' => env('PASSPORT_NODE_URL', ''),
 
     // Directory populated by the Node trust-bundle synchronization job.
-    'passport_identity_trust_dir' => env('PASSPORT_IDENTITY_TRUST_DIR', '/opt/data/node'),
+    // The production default is /data/node; local deployments can override it.
+    'identity_trust_dir' => env('IDENTITY_TRUST_DIR', '/data/node'),
 
     // 当前 Project 在 Node 中登记的应用 ID。
     'passport_client_id' => env('PASSPORT_CLIENT_ID', ''),

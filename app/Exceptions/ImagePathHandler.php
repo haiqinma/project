@@ -5,6 +5,7 @@ namespace App\Exceptions;
 use App\Module\Base;
 use App\Module\Image;
 use App\Services\PersistentStorage;
+use Illuminate\Support\Facades\Log;
 
 /**
  * 图片路径处理（原 Exceptions\Handler::ImagePathHandler，新结构下由 bootstrap/app.php
@@ -150,12 +151,21 @@ class ImagePathHandler
                 } else {
                     $image->destroy();
                 }
-            } catch (\ImagickException) {
+            } catch (\Throwable $exception) {
+                Log::warning('Image crop failed.', [
+                    'path' => $path,
+                    'file' => $file,
+                    'rules' => $rules,
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
             } finally {
                 if ($temporarySource !== null) {
                     @unlink($temporarySource);
                 }
             }
+
+            return self::originalImageResponse($file);
         }
 
         // 容错处理
@@ -169,6 +179,26 @@ class ImagePathHandler
             if (file_exists($file)) {
                 return response()->file($file);
             }
+        }
+
+        return null;
+    }
+
+    private static function originalImageResponse(string $file)
+    {
+        if (PersistentStorage::usesS3() && PersistentStorage::exists($file)) {
+            return redirect()->away(PersistentStorage::temporaryUrl($file, now()->addMinutes(10)));
+        }
+
+        $sourcePath = public_path($file);
+        if (file_exists($sourcePath)) {
+            return response()->file($sourcePath, [
+                'Pragma' => 'public',
+                'Cache-Control' => 'max-age=1814400',
+                'Expires' => gmdate('D, d M Y H:i:s', time() + 1814400) . ' GMT',
+                'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($sourcePath)) . ' GMT',
+                'ETag' => md5_file($sourcePath)
+            ]);
         }
 
         return null;

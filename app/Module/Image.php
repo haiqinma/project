@@ -81,7 +81,11 @@ class Image
         } else {
             return $this;
         }
-        $this->image->cropImage($newWidth, $newHeight, ($width - $newWidth) / 2, ($height - $newHeight) / 2);
+        $newWidth = max(1, (int) round($newWidth));
+        $newHeight = max(1, (int) round($newHeight));
+        $x = max(0, (int) floor(($width - $newWidth) / 2));
+        $y = max(0, (int) floor(($height - $newHeight) / 2));
+        $this->image->cropImage($newWidth, $newHeight, $x, $y);
         $this->updateSize();
         return $this;
     }

@@ -1,6 +1,6 @@
 <template>
     <div class="component-only-office">
-        <Alert v-if="loadError" class="load-error" type="error" show-icon>{{$L('组件加载失败！')}}</Alert>
+        <Alert v-if="loadError" class="load-error" type="error" show-icon>{{$L('OnlyOffice 组件加载失败，请检查文档服务配置。')}}</Alert>
         <div :id="id" class="placeholder"></div>
         <div v-if="loadIng > 0" class="office-loading"><Loading/></div>
     </div>
@@ -107,10 +107,10 @@ export default {
     },
 
     computed: {
-        ...mapState(['userInfo', 'themeName']),
+        ...mapState(['userInfo', 'themeName', 'systemConfig']),
 
         fileType() {
-            return this.getType(this.value.type);
+            return this.value.ext || this.getType(this.value.type);
         },
 
         fileName() {
@@ -142,25 +142,27 @@ export default {
                 }
                 this.loadIng++;
                 this.loadError = false;
-                $A.loadScript($A.mainUrl("office/web-apps/apps/api/documents/api.js")).then(_ => {
-                    if (!this.documentKey) {
-                        this.handleClose();
-                        return
-                    }
-                    const documentKey = this.documentKey();
-                    if (documentKey && documentKey.then) {
-                        documentKey.then(this.loadFile).catch(({msg})=>{
-                            $A.modalError({content: msg});
-                        });
-                    } else {
-                        this.loadFile();
-                    }
-                }).catch(_ => {
-                    this.loadError = true
-                }).finally(_ => {
-                    setTimeout(_ => {
-                        this.loadIng--;
-                    }, 300)
+                this.$store.dispatch("systemSetting").catch(_ => {}).finally(_ => {
+                    $A.loadScript(this.officeApiUrl()).then(_ => {
+                        if (!this.documentKey) {
+                            this.handleClose();
+                            return
+                        }
+                        const documentKey = this.documentKey();
+                        if (documentKey && documentKey.then) {
+                            documentKey.then(this.loadFile).catch(({msg})=>{
+                                $A.modalError({content: msg});
+                            });
+                        } else {
+                            this.loadFile();
+                        }
+                    }).catch(_ => {
+                        this.loadError = true
+                    }).finally(_ => {
+                        setTimeout(_ => {
+                            this.loadIng--;
+                        }, 300)
+                    })
                 })
             },
             immediate: true,
@@ -178,6 +180,11 @@ export default {
                     return 'pptx'
             }
             return type;
+        },
+
+        officeApiUrl() {
+            const url = (this.systemConfig.office_public_api_url || '').trim();
+            return url || $A.mainUrl("office/web-apps/apps/api/documents/api.js");
         },
 
         async getUserData() {

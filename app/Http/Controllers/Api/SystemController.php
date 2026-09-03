@@ -156,6 +156,7 @@ class SystemController extends AbstractController
         $setting['department_owner_project_view'] = $setting['department_owner_project_view'] ?: 'close';
         $setting['server_timezone'] = config('app.timezone');
         $setting['server_version'] = Base::getVersion();
+        $setting['office_public_api_url'] = config('dootask.office_public_api_url', '');
         // 指定人员名单仅管理员可见
         if ($type != 'all' && $type != 'save') {
             unset($setting['project_add_userids']);
@@ -1617,8 +1618,8 @@ class SystemController extends AbstractController
             }
             // 添加office资源
             $officePath = '';
-            if (Apps::isInstalled('office')) {
-                $officeApi = 'http://office/web-apps/apps/api/documents/api.js';
+            if (Apps::isOfficeAvailable()) {
+                $officeApi = config('dootask.office_public_api_url') ?: 'http://office/web-apps/apps/api/documents/api.js';
                 $content = @file_get_contents($officeApi);
                 if ($content) {
                     if (preg_match("/const\s+ver\s*=\s*'\/*([^']+)'/", $content, $matches)) {

@@ -61,6 +61,27 @@ class Apps
         }
     }
 
+    public static function isOfficeAvailable(): bool
+    {
+        if (self::isInstalled('office')) {
+            return true;
+        }
+
+        $enabled = config('dootask.office_enabled');
+        if ($enabled !== null && $enabled !== '') {
+            return filter_var($enabled, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return trim((string)config('dootask.office_public_api_url', '')) !== '';
+    }
+
+    public static function isOfficeAvailableThrow(): void
+    {
+        if (!self::isOfficeAvailable()) {
+            throw new ApiException("应用「OnlyOffice」未安装", [], 0, false);
+        }
+    }
+
     /**
      * appstore 目录下的绝对路径（统一 docker/appstore 前缀）。
      *
