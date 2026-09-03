@@ -46,11 +46,11 @@ YeYing 登录页支持扫码登录。配置 Node 钱包身份授权服务后，�
 - 被登录端：调用 `api/passport/login/session` 创建 Node 钱包身份授权会话并展示二维码
 - 手机端：打开 Node 钱包身份授权页 `/identity/authorize?requestId=...`，用已注册到钱包身份的 Passkey/指纹完成确认
 - 被登录端：周期性调用 `api/passport/login/status`，确认通过后 Project 用一次性 code 换取本地用户 token；扫码和本机通行证登录使用同一个登录会话，本机回调页会通知登录页立即完成状态检查并自动关闭
-- 未配置 `PASSPORT_NODE_URL` 或通行证服务不可用时，前端回退旧版本地扫码登录
+- 未配置 `IDENTITY_NODE_URL` 或通行证服务不可用时，前端回退旧版本地扫码登录
 
 ## 部署注意
-- `PASSPORT_NODE_URL` 必须是手机浏览器可访问的 Node 地址，不能填只有服务器本机可访问的 `localhost`
-- `PASSPORT_CLIENT_ID` 必须填写 Node 应用中心里 Project 应用发布后生成的应用 ID（`applications.uid` UUID）
+- `IDENTITY_NODE_URL` 必须是手机浏览器可访问的 Node 地址，不能填只有服务器本机可访问的 `localhost`
+- `IDENTITY_CLIENT_ID` 必须填写 Node 应用中心里 Project 应用发布后生成的应用 ID（`applications.uid` UUID）
 - `APP_URL` 必须是 Node 回调 Project 时可访问的 Project 地址，否则手机确认后电脑端无法完成登录
 
 ## 旧版本地接口流程（兼容）

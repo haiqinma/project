@@ -28,7 +28,7 @@ class PassportController extends AbstractController
     /**
      * @api {post} api/passport/login/session 创建通行证登录会话
      *
-     * @apiDescription 调用 Node 钱包身份授权服务创建二维码登录会话。未配置 PASSPORT_NODE_URL 时前端应回退旧二维码。
+     * @apiDescription 调用 Node 钱包身份授权服务创建二维码登录会话。未配置 IDENTITY_NODE_URL 时前端应回退旧二维码。
      * @apiVersion 1.0.0
      * @apiGroup passport
      * @apiName login__session

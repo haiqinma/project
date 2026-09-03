@@ -31,7 +31,7 @@ return [
     ],
 
     'node_pusher' => [
-        'base_url' => env('PASSPORT_NODE_URL', env('NODE_BASE_URL')),
+        'base_url' => env('IDENTITY_NODE_URL', env('NODE_BASE_URL')),
         'app_id' => env('PUSHER_APP_ID'),
         'key' => env('PUSHER_APP_KEY'),
         'secret' => env('PUSHER_APP_SECRET'),

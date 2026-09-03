@@ -9,7 +9,7 @@ class NodePusherClient
 {
     public function publish(array $body, ?string $timestamp = null, ?int $timeout = null): array
     {
-        $baseUrl = $this->requiredConfig('base_url', 'PASSPORT_NODE_URL');
+        $baseUrl = $this->requiredConfig('base_url', 'IDENTITY_NODE_URL');
         $appId = $this->requiredConfig('app_id', 'PUSHER_APP_ID');
         $key = $this->requiredConfig('key', 'PUSHER_APP_KEY');
         $secret = $this->requiredConfig('secret', 'PUSHER_APP_SECRET');

@@ -11,16 +11,7 @@ env_value() {
   sed -n "s/^${key}=//p" "$root_dir/.env" | head -n 1 | sed -e 's/^['\''"]//' -e 's/['\''"]$//'
 }
 
-runtime_dir="$(env_value YEYING_RUNTIME_DIR)"
-runtime_dir="${runtime_dir:-.}"
-if [[ "$runtime_dir" == /* ]]; then
-  runtime_dir="${runtime_dir%/}"
-else
-  runtime_dir="$root_dir/${runtime_dir%/}"
-fi
-[[ "$runtime_dir" == "$root_dir/." ]] && runtime_dir="$root_dir"
-
-pid_dir="${YEYING_RUN_DIR:-$runtime_dir/run}"
+pid_dir="${YEYING_RUN_DIR:-$root_dir/run}"
 pid_file="$pid_dir/yeying.pid"
 
 port="${LARAVELS_LISTEN_PORT:-$(env_value LARAVELS_LISTEN_PORT)}"
@@ -29,7 +20,7 @@ health_url="${YEYING_HEALTH_URL:-http://127.0.0.1:${port}/}"
 
 ensure_dirs() {
   chmod 755 "$root_dir"
-  mkdir -p "$pid_dir" "$log_dir" "$runtime_dir" "$root_dir/bootstrap/cache" "$root_dir/storage/framework/cache"
+  mkdir -p "$pid_dir" "$log_dir" "$root_dir/bootstrap/cache" "$root_dir/storage/framework/cache"
   touch "$log_dir/starter.log"
 }
 
