@@ -39,7 +39,7 @@ class IdentityCredentialVerifier
 
     private function trustBundle(): array
     {
-        $directory = rtrim(trim((string)config('dootask.passport_identity_trust_dir', '')), DIRECTORY_SEPARATOR);
+        $directory = rtrim(trim((string)config('dootask.identity_trust_dir', '')), DIRECTORY_SEPARATOR);
         if ($directory === '') throw new RuntimeException('identity_trust_directory_not_configured');
         $metadataPath = $directory . DIRECTORY_SEPARATOR . 'issuer-metadata.json';
         $jwksPath = $directory . DIRECTORY_SEPARATOR . 'jwks.json';

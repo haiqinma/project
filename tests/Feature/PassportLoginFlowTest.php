@@ -259,7 +259,7 @@ class PassportLoginFlowTest extends TestCase
             'metadataSha256' => hash('sha256', $metadata),
             'jwksSha256' => hash('sha256', $jwks),
         ]));
-        config()->set('dootask.passport_identity_trust_dir', $directory);
+        config()->set('dootask.identity_trust_dir', $directory);
         $method = new \ReflectionMethod(IdentityCredentialVerifier::class, 'trustBundle');
         $method->setAccessible(true);
 

@@ -13,6 +13,7 @@ use App\Models\FileUser;
 use App\Models\User;
 use App\Models\UserRecentItem;
 use App\Module\Base;
+use App\Module\Apps;
 use App\Module\Down;
 use App\Module\Lock;
 use App\Module\Timer;
@@ -738,12 +739,13 @@ class FileController extends AbstractController
      */
     public function office__token()
     {
-        File::isNeedInstallApp('office');
+        Apps::isOfficeAvailableThrow();
         //
         $config = Request::input('config');
         if (!is_array($config)) {
             return Base::retError('参数错误');
         }
+        $config = $this->applyOfficeInternalApiBase($config);
         $token = \Firebase\JWT\JWT::encode($config, config('app.key') ,'HS256');
         return Base::retSuccess('成功', [
             'token' => $token
@@ -768,7 +770,7 @@ class FileController extends AbstractController
     {
         $user = User::auth();
         //
-        File::isNeedInstallApp('office');
+        Apps::isOfficeAvailableThrow();
         //
         $id = intval(Request::input('id'));
         $status = intval(Request::input('status'));
@@ -779,7 +781,8 @@ class FileController extends AbstractController
         //
         if ($status === 2) {
             $parse = parse_url($url);
-            $from = 'http://nginx' . $parse['path'] . '?' . $parse['query'];
+            $query = isset($parse['query']) ? '?' . $parse['query'] : '';
+            $from = rtrim((string)config('dootask.office_internal_document_base', 'http://nginx'), '/') . $parse['path'] . $query;
             $path = 'uploads/file/' . $file->type . '/' . date("Ym") . '/' . $file->id . '/' . $key;
             $save = storage_path('app/tmp/office-content/' . bin2hex(random_bytes(16)));
             Base::makeDir(dirname($save));
@@ -806,6 +809,35 @@ class FileController extends AbstractController
             @unlink($save);
         }
         return ['error' => 0];
+    }
+
+    private function applyOfficeInternalApiBase(array $config): array
+    {
+        $base = rtrim((string)config('dootask.office_internal_api_base', 'http://nginx/api'), '/');
+        if ($base === '') {
+            return $config;
+        }
+        if (isset($config['document']['url'])) {
+            $config['document']['url'] = $this->replaceOfficeApiBase((string)$config['document']['url'], $base);
+        }
+        if (isset($config['editorConfig']['callbackUrl']) && $config['editorConfig']['callbackUrl']) {
+            $config['editorConfig']['callbackUrl'] = $this->replaceOfficeApiBase((string)$config['editorConfig']['callbackUrl'], $base);
+        }
+        return $config;
+    }
+
+    private function replaceOfficeApiBase(string $url, string $base): string
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['path'])) {
+            return $url;
+        }
+        $query = isset($parts['query']) ? '?' . $parts['query'] : '';
+        $path = $parts['path'];
+        if (str_ends_with($base, '/api') && str_starts_with($path, '/api/')) {
+            $path = substr($path, 4);
+        }
+        return $base . $path . $query;
     }
 
     /**

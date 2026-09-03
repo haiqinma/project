@@ -1137,6 +1137,10 @@ class File extends AbstractModel
         // 遍历配置检查是否需要安装应用
         foreach ($fileTypeAppMapping as $config) {
             if (in_array($type, $config['types'])) {
+                if ($config['app_id'] === 'office') {
+                    Apps::isOfficeAvailableThrow();
+                    continue;
+                }
                 Apps::isInstalledThrow($config['app_id']);
             }
         }

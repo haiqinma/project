@@ -30,4 +30,18 @@ class StorageObjectControllerTest extends TestCase
 
         $this->get('/' . $key)->assertNotFound();
     }
+
+    public function test_s3_crop_failure_falls_back_to_original_object(): void
+    {
+        Storage::fake('s3');
+        config()->set('dootask.file_storage_disk', 's3');
+        $key = 'uploads/chat/test/broken.png';
+        Storage::disk('s3')->put($key, 'not an image');
+        Storage::disk('s3')->buildTemporaryUrlsUsing(
+            fn (string $path): string => 'https://storage.example.test/signed/' . $path
+        );
+
+        $this->get('/' . $key . '/crop/ratio:5,percentage:320x0')
+            ->assertRedirect('https://storage.example.test/signed/' . $key);
+    }
 }

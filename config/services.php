@@ -30,4 +30,12 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'node_pusher' => [
+        'base_url' => env('PASSPORT_NODE_URL', env('NODE_BASE_URL')),
+        'app_id' => env('PUSHER_APP_ID'),
+        'key' => env('PUSHER_APP_KEY'),
+        'secret' => env('PUSHER_APP_SECRET'),
+        'timeout' => env('PUSHER_HTTP_TIMEOUT', 10),
+    ],
+
 ];
