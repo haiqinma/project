@@ -68,17 +68,17 @@ return [
     'online_license_appstore_url' => env('ONLINE_LICENSE_APPSTORE_URL', 'https://appstore.yeying.pub'),
 
     // YeYing Passport / Node 登录中心。为空时登录二维码回退到旧的 Project 本地二维码。
-    'passport_node_url' => env('PASSPORT_NODE_URL', ''),
+    'passport_node_url' => env('IDENTITY_NODE_URL', ''),
 
     // Directory populated by the Node trust-bundle synchronization job.
     // The production default is /data/node; local deployments can override it.
     'identity_trust_dir' => env('IDENTITY_TRUST_DIR', '/data/node'),
 
     // 当前 Project 在 Node 中登记的应用 ID。
-    'passport_client_id' => env('PASSPORT_CLIENT_ID', ''),
+    'passport_client_id' => env('IDENTITY_CLIENT_ID', ''),
 
     // 通行证登录申请的授权范围。
-    'passport_scope' => env('PASSPORT_SCOPE', 'identity.basic identity.username identity.email identity.wallet identity.avatar'),
+    'passport_scope' => env('IDENTITY_SCOPE', 'identity.basic identity.username identity.email identity.wallet identity.avatar'),
 
     // Agent Runtime 内网地址：Project 的 AppStore 兼容入口优先转发到 Agent，由 Agent 再访问 Node Registry。
     'agent_internal_url' => env('AGENT_INTERNAL_URL', env('APPSTORE_INTERNAL_URL', 'http://agent')),
