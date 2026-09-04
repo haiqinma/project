@@ -1,22 +1,18 @@
 name: compile before merge
 
-# 触发条件：当有pull_request事件发生到main分支时
 on:
   pull_request:
     branches:
       - main
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: compile-before-merge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  #
   operation_before_merge:
     runs-on: ubuntu-24.04
 
@@ -24,25 +20,16 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
 
       - name: Install frontend dependencies
-        working-directory: web
-        run: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: Prepare environment
+        run: cp .env.docker .env
 
       - name: Build frontend
-        working-directory: web
         run: npm run build
-
-      - name: Build backend
-        run: |
-          mkdir -p build
-          go build -o build/router ./cmd/router
