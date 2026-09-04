@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use DateTimeInterface;
 use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\TestCase;
 
 class StorageObjectControllerTest extends TestCase
@@ -42,6 +44,31 @@ class StorageObjectControllerTest extends TestCase
         );
 
         $this->get('/' . $key . '/crop/ratio:5,percentage:320x0')
+            ->assertRedirect('https://storage.example.test/signed/' . $key);
+    }
+
+    public function test_s3_crop_path_does_not_check_the_derived_object_key(): void
+    {
+        config()->set('dootask.file_storage_disk', 's3');
+
+        $key = 'uploads/chat/test/derived-source.png';
+        $derivedKey = $key . '/crop/ratio:5,percentage:320x0';
+        $stream = fopen('php://temp', 'rb+');
+        fwrite($stream, 'not an image');
+        rewind($stream);
+
+        $disk = Mockery::mock();
+        $disk->shouldReceive('exists')->with($derivedKey)->never();
+        $disk->shouldReceive('exists')->with($key)->twice()->andReturn(true);
+        $disk->shouldReceive('readStream')->with($key)->once()->andReturn($stream);
+        $disk->shouldReceive('temporaryUrl')
+            ->with($key, Mockery::type(DateTimeInterface::class))
+            ->once()
+            ->andReturn('https://storage.example.test/signed/' . $key);
+
+        Storage::shouldReceive('disk')->with('s3')->andReturn($disk);
+
+        $this->get('/' . $derivedKey)
             ->assertRedirect('https://storage.example.test/signed/' . $key);
     }
 }
