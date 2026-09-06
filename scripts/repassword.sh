@@ -20,8 +20,9 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   ./cmd repassword user@example.com newpass
 
 说明:
-  命令使用 .env 中的 MySQL 配置，并要求本机安装 mysql 客户端。
-  容器场景必须显式设置 MYSQL_CONTAINER=mysql，不会自动猜测容器名。
+  命令使用 .env 中的 MySQL 配置。
+  若本机没有 mysql 客户端，会自动使用当前 docker-compose 的 mysql 服务或运行中的 mysql 容器。
+  如需指定容器，可设置 MYSQL_CONTAINER=mysql。
 EOF
   exit 0
 fi
@@ -45,17 +46,61 @@ export MYSQL_PREFIX="$(env_value DB_PREFIX)"
 : "${MYSQL_DATABASE:?DB_DATABASE 未配置}"
 : "${MYSQL_PREFIX:=}"
 
+docker_container_running() {
+  local container="$1"
+  [[ -n "$container" ]] || return 1
+  [[ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" == "true" ]]
+}
+
+detect_mysql_container() {
+  local container=""
+
+  if docker compose version >/dev/null 2>&1; then
+    container="$(docker compose -f "$root_dir/docker-compose.yml" --project-directory "$root_dir" ps -q mysql 2>/dev/null | head -n 1 || true)"
+    if docker_container_running "$container"; then
+      printf '%s\n' "$container"
+      return 0
+    fi
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    container="$(docker-compose -f "$root_dir/docker-compose.yml" --project-directory "$root_dir" ps -q mysql 2>/dev/null | head -n 1 || true)"
+    if docker_container_running "$container"; then
+      printf '%s\n' "$container"
+      return 0
+    fi
+  fi
+
+  if docker_container_running mysql; then
+    printf '%s\n' mysql
+    return 0
+  fi
+
+  container="$(docker ps --filter label=com.docker.compose.service=mysql --format '{{.ID}}' 2>/dev/null | head -n 1 || true)"
+  if docker_container_running "$container"; then
+    printf '%s\n' "$container"
+    return 0
+  fi
+
+  return 1
+}
+
 if ! command -v mysql >/dev/null 2>&1; then
-  mysql_container="${MYSQL_CONTAINER:-}"
-  [[ -n "$mysql_container" ]] || {
-    echo "未找到 mysql 客户端。请安装 mysql-client，或显式设置 MYSQL_CONTAINER=mysql 后重试。" >&2
+  command -v docker >/dev/null 2>&1 || {
+    echo "未找到 mysql 客户端，也未找到 Docker 命令，无法使用容器内 MySQL 客户端。" >&2
     exit 1
   }
 
-  command -v docker >/dev/null 2>&1 || {
-    echo "已设置 MYSQL_CONTAINER=$mysql_container，但未找到 Docker 命令。" >&2
+  mysql_container="${MYSQL_CONTAINER:-}"
+  if [[ -z "$mysql_container" ]]; then
+    mysql_container="$(detect_mysql_container || true)"
+  fi
+
+  [[ -n "$mysql_container" ]] || {
+    echo "未找到 mysql 客户端，也未找到运行中的 MySQL 容器。请启动 MySQL 容器，或显式设置 MYSQL_CONTAINER=mysql 后重试。" >&2
     exit 1
   }
+
   if [[ "$(docker inspect -f '{{.State.Running}}' "$mysql_container" 2>/dev/null || true)" != "true" ]]; then
     echo "MYSQL_CONTAINER 指定的容器不存在或未运行: $mysql_container" >&2
     exit 1
@@ -64,7 +109,7 @@ if ! command -v mysql >/dev/null 2>&1; then
   export MYSQL_CONTAINER="$mysql_container"
   export MYSQL_HOST=127.0.0.1
   export MYSQL_PORT=3306
-  echo "未找到本机 mysql 客户端，按 MYSQL_CONTAINER 使用 Docker 容器: $MYSQL_CONTAINER" >&2
+  echo "未找到本机 mysql 客户端，已使用 MySQL 容器: $MYSQL_CONTAINER" >&2
 fi
 
 exec sh "$root_dir/docker/mysql/repassword.sh" "$@"

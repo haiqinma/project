@@ -11,6 +11,8 @@ aliases:
   - 添加管理员
   - 创建默认管理员
   - ensure-admin
+  - repassword
+  - 重置管理员密码
   - setadmin
   - clearadmin
   - 取消管理员
@@ -24,7 +26,7 @@ negative:
   - 不能给临时账号（temp identity）授予管理员身份前，请先取消其 temp 标记
   - 不能取消超级管理员（id=1）的管理员身份，超管始终自带 admin
   - 普通用户无法自助申请，必须由现任管理员授予
-last_verified: v0.0.1
+last_verified: v0.0.2
 ---
 
 # 授予 / 取消系统管理员身份
@@ -47,6 +49,8 @@ last_verified: v0.0.1
 首次部署执行 `./scripts/install.sh` 后，系统会自动运行管理员初始化。若库里没有任何 `identity` 含 `admin` 的用户，会创建或修复 `admin@yeying.com`，输出一次性初始密码，并设置首次登录必须改密。已有管理员时不会改密码。
 
 如果旧部署已经没有管理员，服务器项目目录执行 `./cmd ensure-admin`。不要把 `./cmd repassword` 改成回退第一个用户；`repassword` 只负责重置已有管理员或显式指定的用户。
+
+如果只是忘记管理员密码，服务器项目目录执行 `./cmd repassword`、`./cmd repassword 用户ID` 或 `./cmd repassword 邮箱`。该命令优先使用本机 `mysql` 客户端；本机没有 `mysql` 时，会自动使用当前 `docker-compose.yml` 的 `mysql` 服务或运行中的 `mysql` 容器。非默认容器可用 `MYSQL_CONTAINER=容器名 ./cmd repassword ...` 指定。
 
 ## 生效时间
 - 后端立即生效（数据库直接更新 `users.identity`）
