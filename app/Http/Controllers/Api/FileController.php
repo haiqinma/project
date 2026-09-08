@@ -782,12 +782,12 @@ class FileController extends AbstractController
         if ($status === 2) {
             $parse = parse_url($url);
             $query = isset($parse['query']) ? '?' . $parse['query'] : '';
-            $from = rtrim((string)config('dootask.office_internal_document_base', 'http://nginx'), '/') . $parse['path'] . $query;
+            $from = $this->officeInternalDocumentUrl($parse, $query);
             $path = 'uploads/file/' . $file->type . '/' . date("Ym") . '/' . $file->id . '/' . $key;
             $save = storage_path('app/tmp/office-content/' . bin2hex(random_bytes(16)));
             Base::makeDir(dirname($save));
-            $res = Ihttp::download($from, $save);
-            if (Base::isSuccess($res)) {
+            $res = Ihttp::downloadOffice($from, $save);
+            if ($res['ok']) {
                 PersistentStorage::putFile($path, $save);
                 $content = FileContent::createInstance([
                     'fid' => $file->id,
@@ -805,6 +805,15 @@ class FileController extends AbstractController
                 $file->updated_at = Carbon::now();
                 $file->save();
                 $file->pushMsg('update', $file);
+            } else {
+                $parsedFrom = parse_url($from);
+                \Log::error('OnlyOffice document download rejected', [
+                    'file_id' => $file->id,
+                    'status' => $res['status'],
+                    'size' => $res['size'],
+                    'error' => $res['error'],
+                    'url' => ($parsedFrom['scheme'] ?? '') . '://' . ($parsedFrom['host'] ?? '') . ($parsedFrom['path'] ?? ''),
+                ]);
             }
             @unlink($save);
         }
@@ -824,6 +833,24 @@ class FileController extends AbstractController
             $config['editorConfig']['callbackUrl'] = $this->replaceOfficeApiBase((string)$config['editorConfig']['callbackUrl'], $base);
         }
         return $config;
+    }
+
+    /**
+     * Convert the callback URL returned by OnlyOffice to the internal
+     * Document Server URL. A same-origin /office proxy adds a public prefix
+     * which must not be sent when Project connects directly to port 18088.
+     */
+    private function officeInternalDocumentUrl(array $parse, string $query): string
+    {
+        $base = rtrim((string)config('dootask.office_internal_document_base', 'http://nginx'), '/');
+        $path = (string)($parse['path'] ?? '');
+        $baseParts = parse_url($base);
+        $directDocumentServer = in_array(strtolower((string)($baseParts['host'] ?? '')), ['127.0.0.1', 'localhost', 'office', 'onlyoffice'], true)
+            || (int)($baseParts['port'] ?? 0) === 18088;
+        if ($directDocumentServer && str_starts_with($path, '/office/')) {
+            $path = substr($path, strlen('/office'));
+        }
+        return $base . $path . $query;
     }
 
     private function replaceOfficeApiBase(string $url, string $base): string

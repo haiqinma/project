@@ -289,4 +289,76 @@ class Ihttp
 
         return Base::retSuccess('success');
     }
+
+    /**
+     * 下载并校验 Office Open XML 文件（docx/xlsx/pptx）。
+     * 返回结构化结果，失败时保证不会留下目标文件。
+     */
+    public static function downloadOffice(string $url, string $fileFile): array
+    {
+        $result = ['ok' => false, 'status' => 0, 'size' => 0, 'error' => ''];
+        if ($url === '') {
+            $result['error'] = 'url error';
+            return $result;
+        }
+
+        $dir = dirname($fileFile);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            $result['error'] = 'create directory failed';
+            return $result;
+        }
+        $handle = @fopen($fileFile, 'wb');
+        if ($handle === false) {
+            $result['error'] = 'open destination failed';
+            return $result;
+        }
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            fclose($handle);
+            @unlink($fileFile);
+            $result['error'] = 'initialize http client failed';
+            return $result;
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_FILE => $handle,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 30,
+            CURLOPT_TIMEOUT => 120,
+            CURLOPT_FAILONERROR => false,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+        ]);
+        $ok = curl_exec($ch);
+        $result['status'] = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        fclose($handle);
+
+        $result['size'] = (int)(@filesize($fileFile) ?: 0);
+        if ($ok === false || $curlError !== '') {
+            $result['error'] = 'http request failed: ' . ($curlError ?: 'unknown error');
+        } elseif ($result['status'] < 200 || $result['status'] >= 300) {
+            $result['error'] = 'unexpected http status';
+        } elseif ($result['size'] < 100) {
+            $result['error'] = 'file is empty or too small';
+        } else {
+            $zip = new \ZipArchive();
+            $opened = $zip->open($fileFile, \ZipArchive::CHECKCONS);
+            $valid = $opened === true
+                && $zip->locateName('[Content_Types].xml') !== false
+                && $zip->test(\ZipArchive::CHECKCONS) === true;
+            $zip->close();
+            if (!$valid) {
+                $result['error'] = 'invalid office archive';
+            } else {
+                $result['ok'] = true;
+            }
+        }
+
+        if (!$result['ok']) {
+            @unlink($fileFile);
+        }
+        return $result;
+    }
 }
