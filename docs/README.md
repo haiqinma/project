@@ -35,6 +35,7 @@
 
 ## 开发辅助
 
+- [scripts 脚本说明](./scripts-specification.md)：说明 `scripts/` 目录下运维、发布、升级、应用市场和开发协作脚本的用途、典型调用方式和维护注意事项。
 - [PlantUML 图表预览](./PlantUML图表预览.md)：说明 Markdown 中 PlantUML 图表的内网 PlantUML Server 接入方式、Nginx 同源反代和配置边界。
 - [前端事件总线映射](./前端事件总线映射.md)：由 `npm run events:map` 生成的 mitt 事件收发对照表，用于排查前端事件流和组件耦合。
 
