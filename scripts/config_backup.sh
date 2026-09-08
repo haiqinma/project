@@ -2,9 +2,6 @@
 
 set -uo pipefail
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-BACKUP_CONF_FILE="${SCRIPT_DIR}/backup.conf"
-PASSPHRASE_FILE="${SCRIPT_DIR}/.passphrase-file"
 BACKUP_DIR="/opt/backup"
 LOGFILE=""
 
@@ -14,6 +11,8 @@ MODULE_NAME="$DEPLOY_DIR_NAME"
 if [[ "$DEPLOY_DIR_NAME" =~ ^(.+)-v[^-]+-[[:alnum:]]{7}$ ]]; then
     MODULE_NAME="${BASH_REMATCH[1]}"
 fi
+BACKUP_CONF_FILE="/data/${MODULE_NAME}/backup.conf"
+PASSPHRASE_FILE="/data/${MODULE_NAME}/.passphrase-file"
 
 init_log_file() {
     local logfile_name=$1

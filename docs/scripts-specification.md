@@ -16,9 +16,9 @@
 | 脚本 | 用途 | 典型调用 | 说明 |
 | --- | --- | --- | --- |
 | `package.sh` | 基于远端 `main` 或指定 tag 打生产发布包。 | `./scripts/package.sh` / `./scripts/package.sh v1.2.3` | 会拉取远端、构建前端、安装生产 PHP 依赖，并输出 `output/<project>-<version>-<hash>.tar.gz`。 |
-| `config_backup.sh` | 生产升级前备份配置文件。 | `./scripts/config_backup.sh` | 读取 `scripts/backup.conf` 和 `.passphrase-file`，备份 `.env`；如存在 `/etc/nginx/conf.d/project.conf`，也会放在备份包根目录下。 |
+| `config_backup.sh` | 版本升级成功后备份配置文件。 | `./scripts/config_backup.sh` | 读取 `/data/${MODULE_NAME}/backup.conf` 和 `/data/${MODULE_NAME}/.passphrase-file`，备份 `.env`；如存在 `/etc/nginx/conf.d/project.conf`，也会放在备份包根目录下。 |
 | `copy-for-upgrade.sh` | 升级过程中将当前版本配置复制到目标版本目录。 | `./scripts/copy-for-upgrade.sh /absolute/path/to/target` | 接收目标目录绝对路径，直接覆盖目标目录下 `.env`，成功返回 `0`。 |
-| `backup.conf.template` | `config_backup.sh` 的配置模板。 | 复制为 `scripts/backup.conf` 后编辑 | 用于控制配置备份开关、文件名前缀和后缀。 |
+| `backup.conf.template` | `config_backup.sh` 的配置模板。 | 复制为 `/data/${MODULE_NAME}/backup.conf` 后编辑 | 用于控制配置备份开关、文件名前缀和后缀。 |
 
 ## 应用市场与运行时脚本
 
