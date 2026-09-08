@@ -33,7 +33,7 @@ last_verified: v0.0.2
 YeYing 同时支持以下登录方式（在登录页可切换）：
 
 1. **邮箱 + 密码**：默认方式
-2. **钱包登录**：安装夜莺钱包插件后，点击「钱包登录」按钮，通过 Wallet Identity V1 presentation 完成登录。Wallet 使用本地有效凭证生成并签名 presentation，Project 后端本地验证 DID、scope、issuer 和凭证有效期；正常登录不要求实时访问 Node。首次钱包登录需设置并验证邮箱。
+2. **钱包登录**：安装夜莺钱包插件后，点击「钱包登录」按钮，通过 Wallet Identity V1 presentation 完成登录。Wallet 使用本地有效凭证生成并签名 presentation，Project 后端本地验证 DID、scope、issuer 和凭证有效期；正常登录不要求实时访问 Node。历史钱包账号首次使用身份登录时，只要钱包地址凭证验证通过，Project 会自动补绑身份 DID；同一地址已绑定其他 DID 时会拒绝切换。首次钱包登录需设置并验证邮箱。
 
 钱包登录的解锁、连接、身份资料授权、presentation 出示及账户绑定签名页面顺序，统一遵循 web3-bs《钱包登录统一流程》文档。
 3. **通行证扫码登录**：使用夜莺钱包 App 扫描登录页二维码确认登录，无需钱包插件；通过 Wallet Identity authorization code + PKCE 协议完成身份验证。

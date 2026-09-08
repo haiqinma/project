@@ -309,11 +309,39 @@ class WalletAuthController extends AbstractController
             return $this->sdkError('钱包身份服务返回异常', 'wallet_identity_missing');
         }
 
+        // 历史钱包记录可能只有链上地址、尚未写入 DID。地址已经通过
+        // WalletAccountCredential 和 Presentation 校验，因此可以安全地
+        // 将该历史记录补绑定到当前 DID，避免用户被迫重复注册账号。
         $wallet = UserWallet::where('wallet_identity_did', $did)->first();
         if (!$wallet) {
-            return $this->sdkError('请在夜莺钱包中继续完成登录确认', 'wallet_identity_unbound', [
-                'reason' => 'wallet_confirmation_required',
-            ]);
+            if (!$this->hasVerifiedWalletBindingCredential($presentation, $did, $address, $session['chain_id'])) {
+                return $this->sdkError('钱包身份缺少有效的钱包账号凭证', 'identity_credential_required');
+            }
+            $wallet = UserWallet::where('chain', 'eip155')
+                ->where('chain_id', $session['chain_id'])
+                ->where('address_normalized', $address)
+                ->first();
+            if (!$wallet) {
+                return $this->sdkError('请在夜莺钱包中继续完成登录确认', 'wallet_identity_unbound', [
+                    'reason' => 'wallet_confirmation_required',
+                ]);
+            }
+            if (!empty($wallet->wallet_identity_did) && $wallet->wallet_identity_did !== $did) {
+                return $this->sdkError('钱包身份已绑定其他身份，无法自动切换', 'wallet_identity_binding_conflict');
+            }
+            if (empty($wallet->wallet_identity_did)) {
+                $updated = UserWallet::whereKey($wallet->getKey())
+                    ->whereNull('wallet_identity_did')
+                    ->update(['wallet_identity_did' => $did]);
+                if (!$updated) {
+                    $wallet->refresh();
+                    if ($wallet->wallet_identity_did !== $did) {
+                        return $this->sdkError('钱包身份已绑定其他身份，无法自动切换', 'wallet_identity_binding_conflict');
+                    }
+                } else {
+                    $wallet->wallet_identity_did = $did;
+                }
+            }
         }
         if ($this->normalizeAddress($wallet->address_normalized ?: $wallet->address) !== $address) {
             return $this->sdkError('钱包身份与当前钱包地址不匹配', 'identity_wallet_binding_mismatch');
@@ -424,6 +452,24 @@ class WalletAuthController extends AbstractController
         if (isset($verified['AvatarCredential'])) {
             $this->applyAvatarClaim($user, (string)data_get($verified['AvatarCredential'], 'vc.credentialSubject.avatarUri', ''));
         }
+    }
+
+    private function hasVerifiedWalletBindingCredential(array $presentation, string $did, string $address, string $chainId): bool
+    {
+        foreach (app(IdentityPresentationVerifier::class)->credentialTokens($presentation) as $token) {
+            try {
+                $claims = app(IdentityCredentialVerifier::class)->verify($token, $did, 'WalletAccountCredential');
+                $subject = data_get($claims, 'vc.credentialSubject', []);
+                $claimAddress = strtolower(trim((string)($subject['address'] ?? '')));
+                $claimChain = trim((string)($subject['chainKey'] ?? ''));
+                if ($claimChain === 'eip155:' . $chainId && $claimAddress === $address) {
+                    return true;
+                }
+            } catch (Throwable) {
+                // Try the next credential; the presentation may contain multiple versions.
+            }
+        }
+        return false;
     }
 
     private function applyUsernameClaim(User $user, string $username): void
