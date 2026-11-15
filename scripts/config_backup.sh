@@ -11,6 +11,9 @@ MODULE_NAME="$DEPLOY_DIR_NAME"
 if [[ "$DEPLOY_DIR_NAME" =~ ^(.+)-v[^-]+-[[:alnum:]]{7}$ ]]; then
     MODULE_NAME="${BASH_REMATCH[1]}"
 fi
+# Release directories use <module>-service-v..., but persistent backup
+# configuration remains keyed by the module name under /data/<module>.
+MODULE_NAME="${MODULE_NAME%-service}"
 BACKUP_CONF_FILE="/data/${MODULE_NAME}/backup.conf"
 PASSPHRASE_FILE="/data/${MODULE_NAME}/.passphrase-file"
 
